@@ -567,7 +567,7 @@ mod shooting {
             Rc<dyn ShootDataGateway>,
         ) {
             let config = MissileConfig::new(3, 100.0_f32, 500_f32);
-            let data = Rc::new(MockData::default());
+            let data = Rc::new(data);
             let repo = MockDataGatewayFactory { data: data.clone() }.make_gateway();
             let factory = ShootCommandFactory::new(config, repo);
             let repo = factory.repo.clone();
