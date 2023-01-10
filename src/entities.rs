@@ -39,11 +39,29 @@ impl Vec2 {
             y: self.y / len,
         }
     }
-}
 
-impl From<PolarVec2> for Vec2 {
-    fn from(value: PolarVec2) -> Self {
-        Vec2::new(value.angle.cos() * value.len, value.angle.sin() * value.len)
+    /// Rotate vector by `angle` in radians
+    pub fn rotate(self, angle: f32) -> Self {
+        let Self { x, y } = self;
+        let cos_angle = angle.cos();
+        let sin_angle = angle.sin();
+
+        Vec2::new(cos_angle * x - sin_angle * y, sin_angle * x + cos_angle * y)
+    }
+
+    /// getter for x value
+    pub fn get_x(&self) -> f32 {
+        self.x
+    }
+
+    /// getter for x value
+    pub fn get_y(&self) -> f32 {
+        self.y
+    }
+
+    /// Get angle with x-axis in radians
+    pub fn angle(&self) -> f32 {
+        trim_angle(self.y.atan2(self.x))
     }
 }
 
@@ -104,36 +122,6 @@ impl Mul<Vec2> for Vec2 {
     }
 }
 
-/// Polar 2D Vector type
-///
-/// This vector has two components, its length and the angle. The angle is within [0, 2*PI].
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub struct PolarVec2 {
-    len: f32,
-    angle: f32,
-}
-
-impl PolarVec2 {
-    /// Create a new instance
-    pub fn new(len: impl Into<f32>, angle: impl Into<f32>) -> Self {
-        PolarVec2 {
-            len: len.into(),
-            angle: trim_angle(angle),
-        }
-    }
-
-    /// Rotate vector by angle in radians
-    pub fn rotate(self, angle: impl Into<f32>) -> Self {
-        Self::new(self.len, self.angle + angle.into())
-    }
-}
-
-impl From<Vec2> for PolarVec2 {
-    fn from(value: Vec2) -> Self {
-        PolarVec2::new(value.len(), value.y.atan2(value.x))
-    }
-}
-
 /// Trim angle in radians to [0, 2*PI]
 pub fn trim_angle(angle: impl Into<f32>) -> f32 {
     let mut result = angle.into() % TWO_PI;
@@ -146,9 +134,12 @@ pub fn trim_angle(angle: impl Into<f32>) -> f32 {
 #[cfg(test)]
 mod test {
 
-    use std::f32::EPSILON;
+    use std::f32::{
+        consts::{FRAC_PI_2, FRAC_PI_4},
+        EPSILON,
+    };
 
-    use super::{trim_angle, PolarVec2, Vec2, PI, TWO_PI};
+    use super::{trim_angle, Vec2, PI, TWO_PI};
 
     #[test]
     fn vec2_can_be_created_with_other_input() {
@@ -169,6 +160,13 @@ mod test {
     }
 
     #[test]
+    fn vec2_rotates_correct() {
+        assert!((Vec2::new(1.0, 0.0).rotate(PI) - Vec2::new(-1.0, 0.0)).len() < EPSILON);
+        assert!((Vec2::new(1.0, 0.0).rotate(PI / 2.0) - Vec2::new(0.0, 1.0)).len() < EPSILON);
+        assert!((Vec2::new(1.0, 0.0).rotate(-PI / 2.0) - Vec2::new(0.0, -1.0)).len() < EPSILON);
+    }
+
+    #[test]
     fn angle_trimmed_correctly() {
         assert_eq!(trim_angle(0.5), 0.5);
         assert_eq!(trim_angle(TWO_PI + 0.5), 0.5);
@@ -176,41 +174,12 @@ mod test {
     }
 
     #[test]
-    fn polar_vec2_trims_angle() {
-        assert_eq!(PolarVec2::new(1.0, TWO_PI + 0.5), PolarVec2::new(1.0, 0.5))
-    }
-
-    #[test]
-    fn polar_vec2_rotation_trims_angle() {
-        assert_eq!(
-            PolarVec2::new(1.0, PI).rotate(1.5 * PI),
-            PolarVec2::new(1.0, trim_angle(PI + 1.5 * PI))
-        )
-    }
-
-    #[test]
-    fn vec2_converts_to_polar_vec2() {
-        assert_eq!(
-            <Vec2 as Into<PolarVec2>>::into(Vec2::new(1.0, 0.0)),
-            PolarVec2::new(1.0, 0.0)
-        );
-        assert_eq!(
-            <Vec2 as Into<PolarVec2>>::into(Vec2::new(0.0, -2.0)),
-            PolarVec2::new(2.0, 1.5 * PI)
-        );
-    }
-
-    #[test]
-    fn polar_vec2_converts_to_vec2() {
-        assert_eq!(
-            Vec2::new(1.0, 0.0),
-            <PolarVec2 as Into<Vec2>>::into(PolarVec2::new(1.0, 0.0))
-        );
-
-        assert!(
-            (Vec2::new(0.0, -2.0) - <PolarVec2 as Into<Vec2>>::into(PolarVec2::new(2.0, 1.5 * PI)))
-                .len()
-                < EPSILON
-        );
+    fn angle_of_vec2_correctly_computed() {
+        assert!(Vec2::new(1.0, 0.0).angle() == 0.);
+        assert!((Vec2::new(0.0, 1.0).angle() - FRAC_PI_2).abs() < EPSILON);
+        assert!((Vec2::new(-1.0, 0.0).angle() - PI).abs() < 2.1 * EPSILON);
+        assert!((Vec2::new(0.0, -1.0).angle() - 3.0 * FRAC_PI_2).abs() < EPSILON);
+        assert!(Vec2::new(1.0, 1.0).angle() - FRAC_PI_4 < EPSILON);
+        assert!(Vec2::new(-1.0, -1.0).angle() - 5.0 * FRAC_PI_4 < EPSILON);
     }
 }
