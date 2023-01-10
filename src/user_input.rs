@@ -315,12 +315,15 @@ mod shooting {
 
     use super::{InputCommand, PlayerId, PlayerIdData, Vec2Data};
 
+    /// Position, orientation and velocity of the player object
     #[derive(Clone, Copy)]
     pub struct PlayerPosAndVelocityData {
         pos: Vec2Data,
         angle: f32,
         velocity: Vec2Data,
     }
+
+    /// Position, orientation and velocity of the player object
     #[derive(Clone, Copy)]
     struct PlayerPosAndVelocity {
         pos: Vec2,
@@ -346,7 +349,9 @@ mod shooting {
         }
     }
 
+    /// Position, orientation and velocity of a missile object
     pub type MissileLaunchData = PlayerPosAndVelocityData;
+    /// Position, orientation and velocity of a missile object
     type MissileLaunch = PlayerPosAndVelocity;
 
     /// Missile related configuration
@@ -361,6 +366,7 @@ mod shooting {
     }
 
     impl MissileConfig {
+        /// Create a new missile config
         pub fn new(
             max_missile: usize,
             initial_speed: impl Into<f32>,
@@ -384,12 +390,14 @@ mod shooting {
         }
     }
 
+    /// Factory for shoot command use cases
     pub struct ShootCommandFactory {
         config: MissileConfig,
         repo: Rc<dyn ShootDataGateway>,
     }
 
     impl ShootCommandFactory {
+        /// Create factory for shoot command use case
         pub fn new(
             config: MissileConfig,
             repo: impl ShootDataGateway + 'static,
@@ -400,6 +408,7 @@ mod shooting {
             }
         }
 
+        /// Create a new shoot command use case
         pub fn make_shoot_command(&self, player_id: PlayerId) -> Box<dyn InputCommand> {
             Box::new(ShootCommand {
                 config: self.config,
@@ -407,13 +416,9 @@ mod shooting {
                 repo: self.repo.clone(),
             })
         }
-
-        #[cfg(test)]
-        pub fn get_mock_repo(&self) -> Rc<dyn ShootDataGateway> {
-            self.repo.clone()
-        }
     }
 
+    /// Shoot command use-case integrator
     struct ShootCommand {
         config: MissileConfig,
         player_id: PlayerId,
@@ -427,13 +432,14 @@ mod shooting {
     }
 
     impl ShootCommand {
+        /// shoot command use case
         fn shoot(&self) {
-            if self.max_missile_reached_for_player(self.player_id) {
-                return;
+            if self.player_can_shoot_missile(self.player_id) {
+                self.create_missile_for_player(self.player_id);
             }
-            self.create_missile_for_player(self.player_id);
         }
 
+        /// Create a new missile for a player
         fn create_missile_for_player(&self, player_id: PlayerId) {
             let player: PlayerPosAndVelocity = self
                 .repo
@@ -453,22 +459,29 @@ mod shooting {
                 .create_missile_for_player(player_id.into(), new_missile.into());
         }
 
-        fn max_missile_reached_for_player(&self, player_id: PlayerId) -> bool {
+        /// Check if player can shoot more missiles
+        fn player_can_shoot_missile(&self, player_id: PlayerId) -> bool {
             let current_missile = self.repo.get_player_missile_count(player_id.into());
-            current_missile >= self.config.max
+            current_missile < self.config.max
         }
     }
 
+    /// Interface for factory of data gateways for shoot use-case
     pub trait ShootDataGatewayFactory {
         type Output: ShootDataGateway;
+        /// Create repo gateway object
         fn make_gateway(&self) -> Self::Output;
     }
 
+    /// Interface of data gateway for shoot use-case
     pub trait ShootDataGateway {
+        /// Return position, orientation and velocity of player
         fn get_player_pos_and_velocity(&self, id: PlayerIdData) -> PlayerPosAndVelocityData;
 
+        /// Return number of active missiles of a player
         fn get_player_missile_count(&self, id: PlayerIdData) -> usize;
 
+        /// Safe missile for a player
         fn create_missile_for_player(&self, id: PlayerIdData, missile: MissileLaunchData);
     }
 
@@ -557,7 +570,7 @@ mod shooting {
             let data = Rc::new(MockData::default());
             let repo = MockDataGatewayFactory { data: data.clone() }.make_gateway();
             let factory = ShootCommandFactory::new(config, repo);
-            let repo = factory.get_mock_repo();
+            let repo = factory.repo.clone();
             (config, factory, data, repo)
         }
 
@@ -596,7 +609,7 @@ mod shooting {
                 angle: 0.56,
                 velocity: [4.0, 45.0],
             };
-            let (config, command_factory, data, repo) = setup_shoot_test(MockData {
+            let (config, command_factory, data, _) = setup_shoot_test(MockData {
                 player: player_pos,
                 ..MockData::default()
             });
@@ -619,7 +632,7 @@ mod shooting {
                 angle: 0.56,
                 velocity: [4.0, 45.0],
             };
-            let (config, command_factory, data, repo) = setup_shoot_test(MockData {
+            let (config, command_factory, data, _) = setup_shoot_test(MockData {
                 player: player_pos,
                 ..MockData::default()
             });
@@ -642,7 +655,7 @@ mod shooting {
                 angle: 0.56,
                 velocity: [4.0, 45.0],
             };
-            let (config, command_factory, data, repo) = setup_shoot_test(MockData {
+            let (config, command_factory, data, _) = setup_shoot_test(MockData {
                 player: player_pos,
                 ..MockData::default()
             });
