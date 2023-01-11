@@ -10,7 +10,7 @@ use crate::entities::Vec2;
 pub type PlayerId = &'static str;
 
 /// Intermediate format for exchange with storage backend
-type Vec2Data = [f32; 2];
+pub type Vec2Data = [f32; 2];
 
 impl From<Vec2Data> for Vec2 {
     fn from(value: Vec2Data) -> Self {
@@ -24,7 +24,7 @@ impl From<Vec2> for Vec2Data {
     }
 }
 
-type PlayerIdData = PlayerId;
+pub type PlayerIdData = PlayerId;
 
 /// Interface for commands issued by player input
 pub trait InputCommand {
@@ -32,9 +32,12 @@ pub trait InputCommand {
 }
 
 // Reexport player movement API
-pub use movement::{
-    MoveCommandFactory, MoveConfig, MoveInstruction, PlayerMovementDataGateway,
-    PlayerMovementDataGatewayFactory,
+pub use movement::{MoveCommandFactory, MoveConfig, MoveInstruction, PlayerMovementDataGateway};
+
+// Reexport shoot API
+pub use shooting::{
+    MissileConfig, MissileLaunchData, PlayerPosAndVelocityData, ShootCommandFactory,
+    ShootDataGateway,
 };
 
 mod movement {
@@ -83,17 +86,14 @@ mod movement {
     /// Move command factory
     pub struct MoveCommandFactory {
         pub config: MoveConfig,
-        pub repo: Rc<dyn PlayerMovementDataGateway>,
+        pub repo: DataGateway,
     }
 
     impl MoveCommandFactory {
-        pub fn new(
-            config: MoveConfig,
-            repo_factory: impl PlayerMovementDataGateway + 'static,
-        ) -> Self {
+        pub fn new(config: MoveConfig, repo: DataGateway) -> Self {
             Self {
                 config,
-                repo: Rc::new(repo_factory),
+                repo: repo.clone(),
             }
         }
         pub fn make_move_command(
@@ -108,11 +108,6 @@ mod movement {
                 repo: self.repo.clone(),
             })
         }
-
-        #[cfg(test)]
-        pub fn get_mock_repo(&self) -> Rc<dyn PlayerMovementDataGateway> {
-            self.repo.clone()
-        }
     }
 
     /// Concrete type for player movement commands
@@ -120,7 +115,7 @@ mod movement {
         player_id: PlayerId,
         instruction: MoveInstruction,
         config: MoveConfig,
-        repo: Rc<dyn PlayerMovementDataGateway>,
+        repo: DataGateway,
     }
 
     impl InputCommand for MoveCommand {
@@ -163,14 +158,6 @@ mod movement {
         }
     }
 
-    /// Abstrat fatory for player data gateway objects
-    ///
-    /// Storage backends must implement this interface. DIP
-    pub trait PlayerMovementDataGatewayFactory {
-        type Output: PlayerMovementDataGateway;
-        fn make_gateway(&self) -> Self::Output;
-    }
-
     /// Interface for player data provider.
     ///
     /// Every storage backend for player data must implement this trait to be usable for providing game state data.
@@ -181,6 +168,8 @@ mod movement {
         fn set_player_acceleration(&self, id: PlayerIdData, acceleration: Vec2Data);
     }
 
+    type DataGateway = Rc<dyn PlayerMovementDataGateway>;
+
     #[cfg(test)]
     mod test {
         use std::{cell::RefCell, rc::Rc};
@@ -189,37 +178,24 @@ mod movement {
 
         use super::{
             MoveCommandFactory, MoveConfig, MoveInstruction, PlayerIdData,
-            PlayerMovementDataGateway, PlayerMovementDataGatewayFactory, Vec2Data,
+            PlayerMovementDataGateway, Vec2Data,
         };
-
-        struct MockDataGatewayFactory {
-            data: Rc<MockData>,
-        }
-        impl PlayerMovementDataGatewayFactory for MockDataGatewayFactory {
-            type Output = MockDataGateway;
-
-            fn make_gateway(&self) -> Self::Output {
-                MockDataGateway {
-                    data: self.data.clone(),
-                }
-            }
-        }
 
         #[derive(Default)]
         struct MockData {
-            vec: RefCell<(PlayerIdData, String, Vec2Data)>,
-            scalar: RefCell<(PlayerIdData, String, f32)>,
+            vec: (PlayerIdData, String, Vec2Data),
+            scalar: (PlayerIdData, String, f32),
         }
 
         struct MockDataGateway {
-            data: Rc<MockData>,
+            data: MockData,
         }
-        impl PlayerMovementDataGateway for MockDataGateway {
+        impl PlayerMovementDataGateway for RefCell<MockDataGateway> {
             fn get_player_orientation(&self, _id: super::PlayerIdData) -> f32 {
                 PI / 2.0
             }
             fn set_player_orientation(&self, id: super::PlayerIdData, orientation: f32) {
-                *self.data.scalar.borrow_mut() = (id, "orientation".into(), orientation);
+                self.borrow_mut().data.scalar = (id, "orientation".into(), orientation);
             }
             fn get_player_acceleration(&self, _id: super::PlayerIdData) -> super::Vec2Data {
                 [50.0, 100.0]
@@ -229,37 +205,28 @@ mod movement {
                 id: super::PlayerIdData,
                 acceleration: super::Vec2Data,
             ) {
-                *self.data.vec.borrow_mut() = (id, "acceleration".into(), acceleration);
+                self.borrow_mut().data.vec = (id, "acceleration".into(), acceleration);
             }
         }
 
-        fn setup_move_test() -> (
-            MoveConfig,
-            MoveCommandFactory,
-            Rc<MockData>,
-            Rc<dyn PlayerMovementDataGateway>,
-        ) {
+        fn setup_move_test() -> (MoveConfig, MoveCommandFactory, Rc<RefCell<MockDataGateway>>) {
             let move_config: MoveConfig = MoveConfig::new(5_f32 * PI / 180.0, 100.0);
-            let mock_data = Rc::new(MockData::default());
-            let repo = MockDataGatewayFactory {
-                data: mock_data.clone(),
-            }
-            .make_gateway();
-            let command_factory = MoveCommandFactory::new(move_config, repo);
-            let repo = command_factory.get_mock_repo();
-            (move_config, command_factory, mock_data, repo)
+            let repo = Rc::new(RefCell::new(MockDataGateway {
+                data: MockData::default(),
+            }));
+            let command_factory = MoveCommandFactory::new(move_config, repo.clone());
+            (move_config, command_factory, repo)
         }
 
         #[test]
         fn player_rotates_left() {
-            let (move_config, command_factory, mock_data, repo) = setup_move_test();
+            let (move_config, command_factory, repo) = setup_move_test();
             let before = repo.get_player_orientation("id");
             command_factory
                 .make_move_command("id", MoveInstruction::RotateLeft)
                 .execute();
-            let changeset = mock_data.scalar.borrow().to_owned();
             assert_eq!(
-                changeset,
+                repo.borrow().data.scalar,
                 (
                     "id",
                     "orientation".into(),
@@ -270,14 +237,13 @@ mod movement {
 
         #[test]
         fn player_rotate_right() {
-            let (move_config, command_factory, mock_data, repo) = setup_move_test();
+            let (move_config, command_factory, repo) = setup_move_test();
             let before = repo.get_player_orientation("id");
             command_factory
                 .make_move_command("id", MoveInstruction::RotateRight)
                 .execute();
-            let changeset = mock_data.scalar.borrow().to_owned();
             assert_eq!(
-                changeset,
+                repo.borrow().data.scalar,
                 (
                     "id",
                     "orientation".into(),
@@ -288,16 +254,15 @@ mod movement {
 
         #[test]
         fn player_accelerate() {
-            let (move_config, command_factory, mock_data, repo) = setup_move_test();
+            let (move_config, command_factory, repo) = setup_move_test();
             let before = repo.get_player_acceleration("id");
             let orientation = repo.get_player_orientation("id");
             command_factory
                 .make_move_command("id", MoveInstruction::Accelerate)
                 .execute();
             let acc = Vec2::new(move_config.get_acceleration(), 0.0).rotate(orientation);
-            let changeset = mock_data.vec.borrow().to_owned();
             assert_eq!(
-                changeset,
+                repo.borrow().data.vec,
                 (
                     "id",
                     "acceleration".into(),
@@ -309,18 +274,16 @@ mod movement {
 }
 
 mod shooting {
-    use std::rc::Rc;
-
-    use crate::entities::Vec2;
-
     use super::{InputCommand, PlayerId, PlayerIdData, Vec2Data};
+    use crate::entities::Vec2;
+    use std::rc::Rc;
 
     /// Position, orientation and velocity of the player object
     #[derive(Clone, Copy)]
     pub struct PlayerPosAndVelocityData {
-        pos: Vec2Data,
-        angle: f32,
-        velocity: Vec2Data,
+        pub pos: Vec2Data,
+        pub angle: f32,
+        pub velocity: Vec2Data,
     }
 
     /// Position, orientation and velocity of the player object
@@ -398,13 +361,10 @@ mod shooting {
 
     impl ShootCommandFactory {
         /// Create factory for shoot command use case
-        pub fn new(
-            config: MissileConfig,
-            repo: impl ShootDataGateway + 'static,
-        ) -> ShootCommandFactory {
+        pub fn new(config: MissileConfig, repo: DataGateway) -> ShootCommandFactory {
             ShootCommandFactory {
                 config,
-                repo: Rc::new(repo),
+                repo: repo.clone(),
             }
         }
 
@@ -422,7 +382,7 @@ mod shooting {
     struct ShootCommand {
         config: MissileConfig,
         player_id: PlayerId,
-        repo: Rc<dyn ShootDataGateway>,
+        repo: DataGateway,
     }
 
     impl InputCommand for ShootCommand {
@@ -466,13 +426,6 @@ mod shooting {
         }
     }
 
-    /// Interface for factory of data gateways for shoot use-case
-    pub trait ShootDataGatewayFactory {
-        type Output: ShootDataGateway;
-        /// Create repo gateway object
-        fn make_gateway(&self) -> Self::Output;
-    }
-
     /// Interface of data gateway for shoot use-case
     pub trait ShootDataGateway {
         /// Return position, orientation and velocity of player
@@ -485,6 +438,8 @@ mod shooting {
         fn create_missile_for_player(&self, id: PlayerIdData, missile: MissileLaunchData);
     }
 
+    type DataGateway = Rc<dyn ShootDataGateway>;
+
     #[cfg(test)]
     mod test {
         use std::{cell::RefCell, f32::EPSILON, rc::Rc};
@@ -496,26 +451,13 @@ mod shooting {
 
         use super::{
             MissileConfig, MissileLaunchData, PlayerPosAndVelocityData, ShootCommandFactory,
-            ShootDataGateway, ShootDataGatewayFactory,
+            ShootDataGateway,
         };
-
-        struct MockDataGatewayFactory {
-            data: Rc<MockData>,
-        }
-        impl ShootDataGatewayFactory for MockDataGatewayFactory {
-            type Output = MockDataGateway;
-
-            fn make_gateway(&self) -> Self::Output {
-                MockDataGateway {
-                    data: self.data.clone(),
-                }
-            }
-        }
 
         #[derive(Default)]
         struct MockData {
             player: PlayerPosAndVelocityData,
-            player_missiles: RefCell<Vec<(PlayerIdData, MissileLaunchData)>>,
+            player_missiles: Vec<(PlayerIdData, MissileLaunchData)>,
         }
 
         impl Default for PlayerPosAndVelocityData {
@@ -529,14 +471,13 @@ mod shooting {
         }
 
         struct MockDataGateway {
-            data: Rc<MockData>,
+            data: MockData,
         }
-        impl ShootDataGateway for MockDataGateway {
+        impl ShootDataGateway for RefCell<MockDataGateway> {
             fn get_player_missile_count(&self, id: PlayerIdData) -> usize {
-                self.data
+                self.borrow()
+                    .data
                     .player_missiles
-                    .borrow()
-                    .to_owned()
                     .iter()
                     .filter(|(m_id, _)| *m_id == id)
                     .count()
@@ -544,9 +485,11 @@ mod shooting {
 
             fn get_player_pos_and_velocity(
                 &self,
-                id: PlayerIdData,
+                _: PlayerIdData,
             ) -> super::PlayerPosAndVelocityData {
-                PlayerPosAndVelocityData { ..self.data.player }
+                PlayerPosAndVelocityData {
+                    ..self.borrow().data.player
+                }
             }
 
             fn create_missile_for_player(
@@ -554,7 +497,7 @@ mod shooting {
                 id: PlayerIdData,
                 missile: super::MissileLaunchData,
             ) {
-                self.data.player_missiles.borrow_mut().push((id, missile));
+                self.borrow_mut().data.player_missiles.push((id, missile));
             }
         }
 
@@ -563,42 +506,40 @@ mod shooting {
         ) -> (
             MissileConfig,
             ShootCommandFactory,
-            Rc<MockData>,
-            Rc<dyn ShootDataGateway>,
+            Rc<RefCell<MockDataGateway>>,
         ) {
             let config = MissileConfig::new(3, 100.0_f32, 500_f32);
-            let data = Rc::new(data);
-            let repo = MockDataGatewayFactory { data: data.clone() }.make_gateway();
-            let factory = ShootCommandFactory::new(config, repo);
-            let repo = factory.repo.clone();
-            (config, factory, data, repo)
+            let repo = Rc::new(RefCell::new(MockDataGateway { data: data }));
+            let factory = ShootCommandFactory::new(config, repo.clone());
+            (config, factory, repo)
         }
 
         #[test]
         fn missile_shot_when_max_is_not_reached() {
-            let (config, command_factory, data, repo) = setup_shoot_test(MockData::default());
+            let (config, command_factory, repo) = setup_shoot_test(MockData::default());
             let player_id = "id";
             let before_missile_count = repo.get_player_missile_count(player_id);
             assert_eq!(before_missile_count, 0);
             assert!(before_missile_count < config.get_max_missile());
             command_factory.make_shoot_command(player_id).execute();
-            let after_missile_count = data.player_missiles.borrow().to_owned().len();
+            let after_missile_count = repo.get_player_missile_count(player_id);
             assert_eq!(after_missile_count, 1);
         }
 
         #[test]
         fn missile_not_shot_when_max_is_reached() {
-            let (config, command_factory, data, repo) = setup_shoot_test(MockData::default());
+            let (config, command_factory, repo) = setup_shoot_test(MockData::default());
             let player_id = "id";
             for _ in 0..config.max {
-                data.player_missiles
-                    .borrow_mut()
+                repo.borrow_mut()
+                    .data
+                    .player_missiles
                     .push((player_id, MissileLaunchData::default()));
             }
             let before_missile_count = repo.get_player_missile_count(player_id);
             assert_eq!(before_missile_count, config.max);
             command_factory.make_shoot_command(player_id).execute();
-            let after_missile_count = data.player_missiles.borrow().to_owned().len();
+            let after_missile_count = repo.borrow().data.player_missiles.len();
             assert_eq!(after_missile_count, before_missile_count);
         }
 
@@ -609,17 +550,17 @@ mod shooting {
                 angle: 0.56,
                 velocity: [4.0, 45.0],
             };
-            let (config, command_factory, data, _) = setup_shoot_test(MockData {
+            let (config, command_factory, repo) = setup_shoot_test(MockData {
                 player: player_pos,
                 ..MockData::default()
             });
             let player_id = "id";
             command_factory.make_shoot_command(player_id).execute();
-            let expected_pos = <Vec2Data as Into<Vec2>>::into(data.player.pos)
-                + Vec2::new(config.initial_distance, 0.0).rotate(data.player.angle);
+            let expected_pos = <Vec2Data as Into<Vec2>>::into(repo.borrow().data.player.pos)
+                + Vec2::new(config.initial_distance, 0.0).rotate(repo.borrow().data.player.angle);
             assert!(
                 (expected_pos
-                    - <Vec2Data as Into<Vec2>>::into(data.player_missiles.borrow()[0].1.pos))
+                    - <Vec2Data as Into<Vec2>>::into(repo.borrow().data.player_missiles[0].1.pos))
                 .len()
                     < EPSILON
             );
@@ -632,17 +573,19 @@ mod shooting {
                 angle: 0.56,
                 velocity: [4.0, 45.0],
             };
-            let (config, command_factory, data, _) = setup_shoot_test(MockData {
+            let (config, command_factory, repo) = setup_shoot_test(MockData {
                 player: player_pos,
                 ..MockData::default()
             });
             let player_id = "id";
             command_factory.make_shoot_command(player_id).execute();
-            let expected_vel = <Vec2Data as Into<Vec2>>::into(data.player.velocity)
-                + Vec2::new(config.initial_speed, 0.0).rotate(data.player.angle);
+            let expected_vel = <Vec2Data as Into<Vec2>>::into(repo.borrow().data.player.velocity)
+                + Vec2::new(config.initial_speed, 0.0).rotate(repo.borrow().data.player.angle);
             assert!(
                 (expected_vel
-                    - <Vec2Data as Into<Vec2>>::into(data.player_missiles.borrow()[0].1.velocity))
+                    - <Vec2Data as Into<Vec2>>::into(
+                        repo.borrow().data.player_missiles[0].1.velocity
+                    ))
                 .len()
                     < EPSILON
             );
@@ -655,16 +598,18 @@ mod shooting {
                 angle: 0.56,
                 velocity: [4.0, 45.0],
             };
-            let (config, command_factory, data, _) = setup_shoot_test(MockData {
+            let (config, command_factory, repo) = setup_shoot_test(MockData {
                 player: player_pos,
                 ..MockData::default()
             });
             let player_id = "id";
             command_factory.make_shoot_command(player_id).execute();
-            let expected_vel = <Vec2Data as Into<Vec2>>::into(data.player.velocity)
-                + Vec2::new(config.initial_speed, 0.0).rotate(data.player.angle);
+            let expected_vel = <Vec2Data as Into<Vec2>>::into(repo.borrow().data.player.velocity)
+                + Vec2::new(config.initial_speed, 0.0).rotate(repo.borrow().data.player.angle);
             let expected_angle = expected_vel.angle();
-            assert!((expected_angle - data.player_missiles.borrow()[0].1.angle).abs() < EPSILON);
+            assert!(
+                (expected_angle - repo.borrow().data.player_missiles[0].1.angle).abs() < EPSILON
+            );
         }
     }
 }
