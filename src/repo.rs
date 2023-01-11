@@ -31,7 +31,7 @@ pub struct GameState {
     player: HashMap<PlayerIdData, PlayerState>,
 }
 impl GameState {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let mut state = Self {
             player: HashMap::with_capacity(PLAYER_CAPACITY),
         };
