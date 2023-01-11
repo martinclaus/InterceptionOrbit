@@ -279,7 +279,7 @@ mod shooting {
     use std::rc::Rc;
 
     /// Position, orientation and velocity of the player object
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, PartialEq, Debug)]
     pub struct PlayerPosAndVelocityData {
         pub pos: Vec2Data,
         pub angle: f32,
