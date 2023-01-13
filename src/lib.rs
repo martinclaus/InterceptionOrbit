@@ -92,6 +92,25 @@ pub mod repo_interfaces {
             )
         }
     }
+    impl<I1, I2, I3, I4, I5, O1, O2, O3, O4, O5> Marshalling<(O1, O2, O3, O4, O5)>
+        for (I1, I2, I3, I4, I5)
+    where
+        I1: Marshalling<O1>,
+        I2: Marshalling<O2>,
+        I3: Marshalling<O3>,
+        I4: Marshalling<O4>,
+        I5: Marshalling<O5>,
+    {
+        fn convert(&self) -> (O1, O2, O3, O4, O5) {
+            (
+                self.0.convert(),
+                self.1.convert(),
+                self.2.convert(),
+                self.3.convert(),
+                self.4.convert(),
+            )
+        }
+    }
 
     /// Generic implementation for vectors
     impl<I1, O1> Marshalling<Vec<O1>> for Vec<I1>

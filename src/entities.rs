@@ -24,6 +24,11 @@ impl Vec2 {
         }
     }
 
+    /// Zero vector (0.0, 0.0)
+    pub fn zero() -> Self {
+        Vec2 { x: 0.0, y: 0.0 }
+    }
+
     /// Square of the length of a [`Vec2`]
     pub fn len2(self) -> f32 {
         self.x * self.x + self.y * self.y
