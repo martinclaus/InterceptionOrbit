@@ -4,28 +4,6 @@
 //! -  Player movement
 //! -  Missile launch
 
-use crate::entities::Vec2;
-
-/// A Player identifier
-pub type PlayerId = &'static str;
-
-/// Intermediate format for exchange with storage backend
-pub type Vec2Data = [f32; 2];
-
-impl From<Vec2Data> for Vec2 {
-    fn from(value: Vec2Data) -> Self {
-        Self::new(value[0], value[1])
-    }
-}
-
-impl From<Vec2> for Vec2Data {
-    fn from(value: Vec2) -> Self {
-        [value.get_x(), value.get_y()]
-    }
-}
-
-pub type PlayerIdData = PlayerId;
-
 /// Interface for commands issued by player input
 pub trait InputCommand {
     fn execute(&self);
@@ -41,8 +19,11 @@ pub use shooting::{
 };
 
 mod movement {
-    use super::{InputCommand, PlayerId, PlayerIdData, Vec2Data};
-    use crate::entities::{trim_angle, Vec2};
+    use super::InputCommand;
+    use crate::{
+        entities::{trim_angle, Vec2},
+        repo_interfaces::{Marshalling, PlayerId, PlayerIdData, Vec2Data},
+    };
     use std::rc::Rc;
 
     /// Configuration object for player movement
@@ -131,10 +112,10 @@ mod movement {
     impl MoveCommand {
         /// Rotate player by angle
         fn player_rotate(&self, angle: f32) {
-            let orientation = self.repo.get_player_orientation(self.player_id);
+            let orientation = self.repo.get_player_orientation(self.player_id).convert();
             let new_orientation = trim_angle(orientation + angle);
             self.repo
-                .set_player_orientation(self.player_id, new_orientation);
+                .set_player_orientation(self.player_id, new_orientation.convert());
         }
 
         /// Rotate player by fixed angle to the left
@@ -150,11 +131,11 @@ mod movement {
         }
         /// accelerate player in current diretion by fixed amount
         fn player_accelerate(&self) {
-            let orientation = self.repo.get_player_orientation(self.player_id);
-            let acc = self.repo.get_player_acceleration(self.player_id).into();
+            let orientation = self.repo.get_player_orientation(self.player_id).convert();
+            let acc = self.repo.get_player_acceleration(self.player_id).convert();
             let new_acc = Vec2::new(self.config.acceleration, 0.0).rotate(orientation) + acc;
             self.repo
-                .set_player_acceleration(self.player_id, new_acc.into())
+                .set_player_acceleration(self.player_id, new_acc.convert())
         }
     }
 
@@ -274,13 +255,14 @@ mod movement {
 }
 
 mod shooting {
-    use super::{InputCommand, PlayerId, PlayerIdData, Vec2Data};
+    use super::InputCommand;
     use crate::entities::Vec2;
+    use crate::repo_interfaces::{Marshalling, PlayerId, PlayerIdData, Vec2Data};
     use std::rc::Rc;
 
     /// Position, orientation and velocity of the player object
     #[derive(Clone, Copy, PartialEq, Debug)]
-    pub struct PlayerPosAndVelocityData {
+    pub struct ObjectPosAndVelocityData {
         pub pos: Vec2Data,
         pub angle: f32,
         pub velocity: Vec2Data,
@@ -288,29 +270,34 @@ mod shooting {
 
     /// Position, orientation and velocity of the player object
     #[derive(Clone, Copy)]
-    struct PlayerPosAndVelocity {
+    struct ObjectPosAndVelocity {
         pos: Vec2,
         angle: f32,
         velocity: Vec2,
     }
-    impl From<PlayerPosAndVelocityData> for PlayerPosAndVelocity {
-        fn from(value: PlayerPosAndVelocityData) -> Self {
+    impl Marshalling<PlayerPosAndVelocity> for PlayerPosAndVelocityData {
+        fn convert(&self) -> PlayerPosAndVelocity {
             PlayerPosAndVelocity {
-                pos: value.pos.into(),
-                angle: value.angle.into(),
-                velocity: value.velocity.into(),
+                pos: self.pos.convert(),
+                angle: self.angle.convert(),
+                velocity: self.velocity.convert(),
             }
         }
     }
-    impl From<PlayerPosAndVelocity> for PlayerPosAndVelocityData {
-        fn from(value: PlayerPosAndVelocity) -> Self {
+    impl Marshalling<PlayerPosAndVelocityData> for PlayerPosAndVelocity {
+        fn convert(&self) -> PlayerPosAndVelocityData {
             PlayerPosAndVelocityData {
-                pos: value.pos.into(),
-                angle: value.angle.into(),
-                velocity: value.velocity.into(),
+                pos: self.pos.convert(),
+                angle: self.angle.convert(),
+                velocity: self.velocity.convert(),
             }
         }
     }
+
+    /// Position, orientation and velocity of an object
+    pub type PlayerPosAndVelocityData = ObjectPosAndVelocityData;
+    /// Position, orientation and velocity of an object
+    type PlayerPosAndVelocity = ObjectPosAndVelocity;
 
     /// Position, orientation and velocity of a missile object
     pub type MissileLaunchData = PlayerPosAndVelocityData;
@@ -401,10 +388,10 @@ mod shooting {
 
         /// Create a new missile for a player
         fn create_missile_for_player(&self, player_id: PlayerId) {
-            let player: PlayerPosAndVelocity = self
+            let player = self
                 .repo
-                .get_player_pos_and_velocity(player_id.into())
-                .into();
+                .get_player_pos_and_velocity(player_id.convert())
+                .convert();
             let missile_pos =
                 player.pos + Vec2::new(self.config.initial_distance, 0.0).rotate(player.angle);
             let missile_vel =
@@ -416,12 +403,12 @@ mod shooting {
                 velocity: missile_vel,
             };
             self.repo
-                .create_missile_for_player(player_id.into(), new_missile.into());
+                .create_missile_for_player(player_id.convert(), new_missile.convert());
         }
 
         /// Check if player can shoot more missiles
         fn player_can_shoot_missile(&self, player_id: PlayerId) -> bool {
-            let current_missile = self.repo.get_player_missile_count(player_id.into());
+            let current_missile = self.repo.get_player_missile_count(player_id.convert());
             current_missile < self.config.max
         }
     }
@@ -446,7 +433,7 @@ mod shooting {
 
         use crate::{
             entities::Vec2,
-            user_input::{PlayerIdData, Vec2Data},
+            repo_interfaces::{Marshalling, PlayerIdData},
         };
 
         use super::{
@@ -556,12 +543,10 @@ mod shooting {
             });
             let player_id = "id";
             command_factory.make_shoot_command(player_id).execute();
-            let expected_pos = <Vec2Data as Into<Vec2>>::into(repo.borrow().data.player.pos)
+            let expected_pos = repo.borrow().data.player.pos.convert()
                 + Vec2::new(config.initial_distance, 0.0).rotate(repo.borrow().data.player.angle);
             assert!(
-                (expected_pos
-                    - <Vec2Data as Into<Vec2>>::into(repo.borrow().data.player_missiles[0].1.pos))
-                .len()
+                (expected_pos - repo.borrow().data.player_missiles[0].1.pos.convert()).len()
                     < EPSILON
             );
         }
@@ -579,14 +564,10 @@ mod shooting {
             });
             let player_id = "id";
             command_factory.make_shoot_command(player_id).execute();
-            let expected_vel = <Vec2Data as Into<Vec2>>::into(repo.borrow().data.player.velocity)
+            let expected_vel = repo.borrow().data.player.velocity.convert()
                 + Vec2::new(config.initial_speed, 0.0).rotate(repo.borrow().data.player.angle);
             assert!(
-                (expected_vel
-                    - <Vec2Data as Into<Vec2>>::into(
-                        repo.borrow().data.player_missiles[0].1.velocity
-                    ))
-                .len()
+                (expected_vel - repo.borrow().data.player_missiles[0].1.velocity.convert()).len()
                     < EPSILON
             );
         }
@@ -604,7 +585,7 @@ mod shooting {
             });
             let player_id = "id";
             command_factory.make_shoot_command(player_id).execute();
-            let expected_vel = <Vec2Data as Into<Vec2>>::into(repo.borrow().data.player.velocity)
+            let expected_vel = repo.borrow().data.player.velocity.convert()
                 + Vec2::new(config.initial_speed, 0.0).rotate(repo.borrow().data.player.angle);
             let expected_angle = expected_vel.angle();
             assert!(
