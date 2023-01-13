@@ -1,6 +1,9 @@
 //! Core bussiness objects of Interception Orbit
 
-use std::ops::{Add, Div, Mul, Sub};
+use std::{
+    iter::Sum,
+    ops::{Add, AddAssign, Div, Mul, Sub},
+};
 
 pub const PI: f32 = std::f32::consts::PI;
 pub const TWO_PI: f32 = 2_f32 * PI;
@@ -74,6 +77,29 @@ impl Add<Vec2> for Vec2 {
     }
 }
 
+impl AddAssign<Vec2> for Vec2 {
+    fn add_assign(&mut self, rhs: Vec2) {
+        self.x += rhs.x;
+        self.y += rhs.y;
+    }
+}
+
+impl<'a> Sum<&'a Vec2> for Vec2 {
+    fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        let mut result = Vec2::new(0.0, 0.0);
+        iter.for_each(|item| result += *item);
+        result
+    }
+}
+
+impl Sum<Vec2> for Vec2 {
+    fn sum<I: Iterator<Item = Vec2>>(iter: I) -> Self {
+        let mut result = Vec2::new(0.0, 0.0);
+        iter.for_each(|item| result += item);
+        result
+    }
+}
+
 impl Sub<Vec2> for Vec2 {
     type Output = Vec2;
 
@@ -131,6 +157,14 @@ pub fn trim_angle(angle: impl Into<f32>) -> f32 {
     result
 }
 
+/// gravitational acceleration
+pub fn gravity(attractant_position: Vec2, attractant_mass: f32, body_position: Vec2) -> Vec2 {
+    const GRAVITY_CONSTANT: f32 = 1.0;
+    let r = attractant_position - body_position;
+    let r2 = r.len2();
+    r.norm() * GRAVITY_CONSTANT * attractant_mass / r2
+}
+
 #[cfg(test)]
 mod test {
 
@@ -139,7 +173,7 @@ mod test {
         EPSILON,
     };
 
-    use super::{trim_angle, Vec2, PI, TWO_PI};
+    use super::{gravity, trim_angle, Vec2, PI, TWO_PI};
 
     #[test]
     fn vec2_can_be_created_with_other_input() {
@@ -181,5 +215,27 @@ mod test {
         assert!((Vec2::new(0.0, -1.0).angle() - 3.0 * FRAC_PI_2).abs() < EPSILON);
         assert!(Vec2::new(1.0, 1.0).angle() - FRAC_PI_4 < EPSILON);
         assert!(Vec2::new(-1.0, -1.0).angle() - 5.0 * FRAC_PI_4 < EPSILON);
+    }
+
+    #[test]
+    fn vec2_summed_correctly() {
+        assert_eq!(
+            [
+                Vec2::new(1.0, 3.0),
+                Vec2::new(2.0, 1.0),
+                Vec2::new(5.0, 1.0),
+            ]
+            .iter()
+            .sum::<Vec2>(),
+            Vec2::new(8.0, 5.0)
+        )
+    }
+
+    #[test]
+    fn gravity_computed_correctly() {
+        let pos1 = Vec2::new(0.0, 0.0);
+        let pos2 = Vec2::new(2.0, 0.0);
+        let mass = 10.0;
+        assert_eq!(gravity(pos1, mass, pos2), Vec2::new(-10.0 / 4.0, 0.0));
     }
 }

@@ -1,6 +1,7 @@
 //! Domain rules for Interception Orbit game
 
 mod entities;
+pub mod physics;
 pub mod repo;
 pub mod user_input;
 
