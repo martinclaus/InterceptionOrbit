@@ -10,6 +10,9 @@ pub mod repo_interfaces {
     pub use super::user_input::{
         MissileLaunchData, PlayerMovementDataGateway, PlayerPosAndVelocityData, ShootDataGateway,
     };
+
+    pub use super::physics::{GravityDataGateway, IntegrateDataGateway, StarData};
+
     use crate::entities::Vec2;
 
     /// Trait to implement data marshalling when data crosses an architectural boundary

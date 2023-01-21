@@ -17,10 +17,18 @@ struct Star {
 }
 
 /// Data representation of a [`Star`] object
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StarData {
-    pos: [f32; 2],
+    pos: Vec2Data,
     mass: f32,
+}
+impl StarData {
+    pub fn new(position: Vec2Data, mass: f32) -> Self {
+        StarData {
+            pos: position,
+            mass: mass,
+        }
+    }
 }
 impl Marshalling<Star> for StarData {
     fn convert(&self) -> Star {
