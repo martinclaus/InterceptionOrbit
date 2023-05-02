@@ -43,11 +43,11 @@ impl Marshalling<Star> for StarData {
 ///
 /// This use case adds the acceleration by gravity to all player and missile objects
 pub struct Gravity {
-    repo: DataGateway,
+    repo: GravityDG,
 }
 impl Gravity {
     /// Create use case object
-    pub fn new(repo: DataGateway) -> Self {
+    pub fn new(repo: GravityDG) -> Self {
         Self { repo: repo.clone() }
     }
 
@@ -135,7 +135,7 @@ pub trait GravityDataGateway {
     /// Update acceleration of missile objects
     fn set_acceleration_for_missiles(&self, updates: Vec<(PlayerIdData, MissileIdData, Vec2Data)>);
 }
-type DataGateway = Rc<dyn GravityDataGateway>;
+type GravityDG = Rc<dyn GravityDataGateway>;
 
 #[cfg(test)]
 mod test_gravity {
@@ -242,80 +242,81 @@ type MissileInfoData = (PlayerIdData, MissileIdData, Vec2Data, Vec2Data, Vec2Dat
 ///
 /// Integrates position and velocity of all objects. This will also set the acceleration to zero.
 pub struct Integrate {
-    delta_time: f32,
+    // delta_time: f32,
     repo: Rc<dyn IntegrateDataGateway>,
 }
 impl Integrate {
     /// Create a new integration use case
-    pub fn new(delta_time: impl Into<f32>, repo: Rc<dyn IntegrateDataGateway>) -> Self {
-        Self {
-            delta_time: delta_time.into(),
-            repo: repo,
-        }
+    pub fn new(repo: Rc<dyn IntegrateDataGateway>) -> Self {
+        Self { repo: repo }
     }
 
     /// Run the use case
-    pub fn execute(&self) {
-        self.integrate_player();
-        self.integrate_missiles();
+    pub fn execute(&self, delta_time: impl Into<f32>) {
+        let dt = delta_time.into();
+        self.integrate_player(dt);
+        self.integrate_missiles(dt);
     }
 
-    /// Integrate a vector in time using Euler forward
+    /// Integrate a vector in time using eulers method
     fn integrate(v: Vec2, inc: Vec2, delta_time: f32) -> Vec2 {
         v + inc * delta_time
     }
     /// Integrate position and velocity and set acceleration to zero    
-    fn integrate_pos_vel_and_acc(&self, data: PosVelAcc) -> PosVelAcc {
-        let delta_time = self.delta_time;
+    fn integrate_pos_vel_and_acc(
+        &self,
+        pos: Vec2,
+        vel: Vec2,
+        acc: Vec2,
+        delta_time: f32,
+    ) -> PosVelAcc {
         (
-            Self::integrate(data.0, data.1, delta_time),
-            Self::integrate(data.1, data.2, delta_time),
+            Self::integrate(pos, vel, delta_time),
+            Self::integrate(vel, acc, delta_time),
             Vec2::zero(),
         )
     }
 
     /// Integrate position and velocity of all player objects. Also set acceleration to zero.
-    fn integrate_player(&self) {
-        let player_info = self.get_player_info();
-        let new_player_info = player_info
-            .iter()
-            .map(|&(id, pos, vel, acc)| {
-                let (pos, vel, acc) = self.integrate_pos_vel_and_acc((pos, vel, acc));
-                (id, pos, vel, acc)
-            })
-            .collect();
-        self.set_player_info(new_player_info)
+    fn integrate_player(&self, delta_time: f32) {
+        self.set_player_info(self.get_player_info().map(|(id, pos, vel, acc)| {
+            let (pos, vel, acc) = self.integrate_pos_vel_and_acc(pos, vel, acc, delta_time);
+            (id, pos, vel, acc)
+        }));
     }
 
-    /// Get position, velocity and acceleration of all player objects
-    fn get_player_info(&self) -> Vec<PlayerInfo> {
-        self.repo.get_player_info().convert()
+    /// Iterator of position, velocity and acceleration of all player objects
+    fn get_player_info(&self) -> impl Iterator<Item = PlayerInfo> {
+        self.repo
+            .get_player_info()
+            .into_iter()
+            .map(|item| item.convert())
     }
     /// Update position, velocity and acceleration for all player objects
-    fn set_player_info(&self, data: Vec<PlayerInfo>) {
-        self.repo.set_player_info(data.convert())
+    fn set_player_info(&self, data: impl Iterator<Item = PlayerInfo>) {
+        self.repo
+            .set_player_info(data.map(|item| item.convert()).collect())
     }
 
     /// Integrate position and velocity of all missile objects. Also set acceleration to zero.
-    fn integrate_missiles(&self) {
-        let missile_info = self.get_missile_info();
-        let new_missile_info = missile_info
-            .iter()
-            .map(|&(pid, mid, pos, vel, acc)| {
-                let (pos, vel, acc) = self.integrate_pos_vel_and_acc((pos, vel, acc));
-                (pid, mid, pos, vel, acc)
-            })
-            .collect();
-        self.set_missile_info(new_missile_info);
+    fn integrate_missiles(&self, delta_time: f32) {
+        self.set_missile_info(self.get_missile_info().map(|(pid, mid, pos, vel, acc)| {
+            let (pos, vel, acc) = self.integrate_pos_vel_and_acc(pos, vel, acc, delta_time);
+            (pid, mid, pos, vel, acc)
+        }));
     }
 
     /// Get position, velocity and acceleration of all missile objects
-    fn get_missile_info(&self) -> Vec<MissileInfo> {
-        self.repo.get_missile_info().convert()
+    fn get_missile_info(&self) -> impl Iterator<Item = MissileInfo> {
+        self.repo
+            .get_missile_info()
+            .into_iter()
+            .map(|item| item.convert())
     }
     /// Update position, velocity and acceleration for all missile objects
-    fn set_missile_info(&self, data: Vec<MissileInfo>) {
-        self.repo.set_missile_info(data.convert());
+    fn set_missile_info(&self, data: impl Iterator<Item = MissileInfo>) {
+        self.repo
+            .set_missile_info(data.map(|item| item.convert()).collect());
     }
 }
 
@@ -394,8 +395,8 @@ mod test_integrate {
     #[test]
     fn integrate_works_if_no_players_are_present() {
         let gateway = setup_integrate_test(MockData::default());
-        let integrate = Integrate::new(1.0, gateway.clone());
-        integrate.execute();
+        let integrate = Integrate::new(gateway.clone());
+        integrate.execute(1.0);
         assert!(gateway.borrow().data.player_info.is_empty())
     }
 
@@ -410,8 +411,8 @@ mod test_integrate {
             ..MockData::default()
         };
         let gateway = setup_integrate_test(data);
-        let integrate = Integrate::new(2.0, gateway.clone());
-        integrate.execute();
+        let integrate = Integrate::new(gateway.clone());
+        integrate.execute(2.0);
         let repo = gateway.borrow();
         assert_eq!(
             repo.data.player_info.clone().get("0").unwrap().0,
@@ -434,8 +435,8 @@ mod test_integrate {
             ..MockData::default()
         };
         let gateway = setup_integrate_test(data);
-        let integrate = Integrate::new(2.0, gateway.clone());
-        integrate.execute();
+        let integrate = Integrate::new(gateway.clone());
+        integrate.execute(2.0);
         let repo = gateway.borrow();
         assert_eq!(
             repo.data.player_info.clone().get("0").unwrap().1,
@@ -458,8 +459,8 @@ mod test_integrate {
             ..MockData::default()
         };
         let gateway = setup_integrate_test(data);
-        let integrate = Integrate::new(2.0, gateway.clone());
-        integrate.execute();
+        let integrate = Integrate::new(gateway.clone());
+        integrate.execute(2.0);
         let repo = gateway.borrow();
         assert_eq!(
             repo.data.player_info.clone().get("0").unwrap().2,
@@ -474,8 +475,8 @@ mod test_integrate {
     #[test]
     fn integrate_works_if_no_missiles_are_present() {
         let gateway = setup_integrate_test(MockData::default());
-        let integrate = Integrate::new(1.0, gateway.clone());
-        integrate.execute();
+        let integrate = Integrate::new(gateway.clone());
+        integrate.execute(1.0);
         assert!(gateway.borrow().data.missile_info.is_empty())
     }
 
@@ -491,8 +492,8 @@ mod test_integrate {
             ..MockData::default()
         };
         let gateway = setup_integrate_test(data);
-        let integrate = Integrate::new(2.0, gateway.clone());
-        integrate.execute();
+        let integrate = Integrate::new(gateway.clone());
+        integrate.execute(2.0);
         let repo = gateway.borrow();
         assert_eq!(
             repo.data.missile_info.clone().get(&("0", 0)).unwrap().0,
@@ -520,8 +521,8 @@ mod test_integrate {
             ..MockData::default()
         };
         let gateway = setup_integrate_test(data);
-        let integrate = Integrate::new(2.0, gateway.clone());
-        integrate.execute();
+        let integrate = Integrate::new(gateway.clone());
+        integrate.execute(2.0);
         let repo = gateway.borrow();
         assert_eq!(
             repo.data.missile_info.clone().get(&("0", 0)).unwrap().1,
@@ -549,8 +550,8 @@ mod test_integrate {
             ..MockData::default()
         };
         let gateway = setup_integrate_test(data);
-        let integrate = Integrate::new(2.0, gateway.clone());
-        integrate.execute();
+        let integrate = Integrate::new(gateway.clone());
+        integrate.execute(2.0);
         let repo = gateway.borrow();
         assert_eq!(
             repo.data.missile_info.clone().get(&("0", 0)).unwrap().2,
