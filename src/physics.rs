@@ -1,4 +1,8 @@
 //! Physics engine
+//!
+//! Use-cases are:
+//! -  adding gravitational acceleration to all objects
+//! -  update velocity and position of all movable objects
 
 // Reexport public API
 pub use gravity::{Gravity, GravityDataGateway, StarData};

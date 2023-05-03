@@ -5,7 +5,9 @@ pub mod physics;
 pub mod repo;
 pub mod user_input;
 
-/// Reexport data gateway interfaces
+/// Reexport data gateway interfaces and data types
+///
+/// Also provides Marshalling implementations for common data types.
 pub mod repo_interfaces {
     pub use super::user_input::{
         MissileLaunchData, PlayerMovementDataGateway, PlayerPosAndVelocityData, ShootDataGateway,
