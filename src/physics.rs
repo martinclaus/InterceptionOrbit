@@ -64,61 +64,69 @@ impl Gravity {
     }
 
     /// Add gravitation acceleration to player objects
-    fn apply_gravitation_to_players(&self, stars: &Vec<Star>) {
-        let players = self.get_player_pos();
-        let acc_updates = players
-            .iter()
-            .map(|&(id, player_pos, player_acc)| {
-                (
-                    id,
-                    player_acc
-                        + stars
-                            .iter()
-                            .map(|star| gravity(star.pos, star.mass, player_pos))
-                            .sum(),
-                )
-            })
-            .collect();
+    fn apply_gravitation_to_players(&self, stars: &[Star]) {
+        let player_objs = self.get_player_pos_and_acc();
+        let acc_updates = self.comput_gravitation_for_objects(player_objs, stars);
         self.set_acceleration_for_player(acc_updates)
     }
 
     /// Get position and acceleration of all player objects
-    fn get_player_pos(&self) -> Vec<(PlayerId, Vec2, Vec2)> {
-        self.repo.get_player_pos_and_acc().convert()
+    fn get_player_pos_and_acc(&self) -> impl Iterator<Item = (PlayerId, Vec2, Vec2)> {
+        self.repo
+            .get_player_pos_and_acc()
+            .into_iter()
+            .map(|data| data.convert())
     }
 
     /// Update acceleration for player objects
-    fn set_acceleration_for_player(&self, updates: Vec<(PlayerId, Vec2)>) {
-        self.repo.set_acceleration_for_player(updates.convert())
+    fn set_acceleration_for_player(&self, updates: impl Iterator<Item = (PlayerId, Vec2)>) {
+        self.repo
+            .set_acceleration_for_player(updates.map(|data| data.convert()).collect());
     }
 
     /// Add gravitational acceleration to missile objects
     fn apply_gravitation_to_missiles(&self, stars: &[Star]) {
-        let missiles = self.get_missile_pos_and_acc();
-        let acc_updates = missiles
-            .iter()
-            .map(|&(player_id, missile_id, pos, acc)| {
-                (
-                    player_id,
-                    missile_id,
-                    acc + stars
-                        .iter()
-                        .map(|star| gravity(star.pos, star.mass, pos))
-                        .sum(),
-                )
-            })
-            .collect();
+        let missile_objs = self.get_missile_pos_and_acc();
+        let acc_updates = self.comput_gravitation_for_objects(missile_objs, stars);
         self.set_acceleration_for_missiles(acc_updates)
     }
 
-    /// Get position and acceleration of all missiles
-    fn get_missile_pos_and_acc(&self) -> Vec<(PlayerId, MissileId, Vec2, Vec2)> {
-        self.repo.get_missile_pos_and_acc().convert()
+    fn comput_gravitation_for_objects<'a, T>(
+        &self,
+        objs: impl Iterator<Item = (T, Vec2, Vec2)> + 'a,
+        stars: &'a [Star],
+    ) -> impl Iterator<Item = (T, Vec2)> + 'a {
+        objs.map(|(id, pos, acc)| {
+            (
+                id,
+                acc + stars
+                    .iter()
+                    .map(|star| gravity(star.pos, star.mass, pos))
+                    .sum(),
+            )
+        })
+    }
+
+    /// Get position and acceleration of all missiles. IDs are folded into single composit key.
+    fn get_missile_pos_and_acc(&self) -> impl Iterator<Item = ((PlayerId, MissileId), Vec2, Vec2)> {
+        self.repo
+            .get_missile_pos_and_acc()
+            .into_iter()
+            .map(|data| data.convert())
+            .map(|(p_id, m_id, pos, acc)| ((p_id, m_id), pos, acc))
     }
 
     /// Update acceleration for missile objects
-    fn set_acceleration_for_missiles(&self, updates: Vec<(PlayerId, MissileId, Vec2)>) {
-        self.repo.set_acceleration_for_missiles(updates.convert())
+    fn set_acceleration_for_missiles(
+        &self,
+        updates: impl Iterator<Item = ((PlayerId, MissileId), Vec2)>,
+    ) {
+        self.repo.set_acceleration_for_missiles(
+            updates
+                .map(|((p_id, m_id), acc)| (p_id, m_id, acc))
+                .map(|data| data.convert())
+                .collect(),
+        );
     }
 }
 
@@ -232,10 +240,10 @@ mod test_gravity {
     }
 }
 
-type PlayerInfo = (PlayerId, Vec2, Vec2, Vec2);
+type ObjInfo<T> = (T, Vec2, Vec2, Vec2);
+type PlayerInfo = ObjInfo<PlayerId>;
+type MissileInfo = ObjInfo<(PlayerId, MissileId)>;
 type PlayerInfoData = (PlayerIdData, Vec2Data, Vec2Data, Vec2Data);
-type PosVelAcc = (Vec2, Vec2, Vec2);
-type MissileInfo = (PlayerId, MissileId, Vec2, Vec2, Vec2);
 type MissileInfoData = (PlayerIdData, MissileIdData, Vec2Data, Vec2Data, Vec2Data);
 
 /// Integrate use-case
@@ -248,7 +256,7 @@ pub struct Integrate {
 impl Integrate {
     /// Create a new integration use case
     pub fn new(repo: Rc<dyn IntegrateDataGateway>) -> Self {
-        Self { repo: repo }
+        Self { repo }
     }
 
     /// Run the use case
@@ -263,14 +271,13 @@ impl Integrate {
         v + inc * delta_time
     }
     /// Integrate position and velocity and set acceleration to zero    
-    fn integrate_pos_vel_and_acc(
+    fn integrate_pos_vel_and_acc<T>(
         &self,
-        pos: Vec2,
-        vel: Vec2,
-        acc: Vec2,
+        (id, pos, vel, acc): (T, Vec2, Vec2, Vec2),
         delta_time: f32,
-    ) -> PosVelAcc {
+    ) -> ObjInfo<T> {
         (
+            id,
             Self::integrate(pos, vel, delta_time),
             Self::integrate(vel, acc, delta_time),
             Vec2::zero(),
@@ -279,10 +286,9 @@ impl Integrate {
 
     /// Integrate position and velocity of all player objects. Also set acceleration to zero.
     fn integrate_player(&self, delta_time: f32) {
-        self.set_player_info(self.get_player_info().map(|(id, pos, vel, acc)| {
-            let (pos, vel, acc) = self.integrate_pos_vel_and_acc(pos, vel, acc, delta_time);
-            (id, pos, vel, acc)
-        }));
+        let player_objs = self.get_player_info();
+        let updated_info = player_objs.map(|data| self.integrate_pos_vel_and_acc(data, delta_time));
+        self.set_player_info(updated_info);
     }
 
     /// Iterator of position, velocity and acceleration of all player objects
@@ -300,10 +306,10 @@ impl Integrate {
 
     /// Integrate position and velocity of all missile objects. Also set acceleration to zero.
     fn integrate_missiles(&self, delta_time: f32) {
-        self.set_missile_info(self.get_missile_info().map(|(pid, mid, pos, vel, acc)| {
-            let (pos, vel, acc) = self.integrate_pos_vel_and_acc(pos, vel, acc, delta_time);
-            (pid, mid, pos, vel, acc)
-        }));
+        let missile_objs = self.get_missile_info();
+        let updated_info =
+            missile_objs.map(|data| self.integrate_pos_vel_and_acc(data, delta_time));
+        self.set_missile_info(updated_info);
     }
 
     /// Get position, velocity and acceleration of all missile objects
@@ -312,11 +318,15 @@ impl Integrate {
             .get_missile_info()
             .into_iter()
             .map(|item| item.convert())
+            .map(|(p_id, m_id, pos, vel, acc)| ((p_id, m_id), pos, vel, acc))
     }
     /// Update position, velocity and acceleration for all missile objects
     fn set_missile_info(&self, data: impl Iterator<Item = MissileInfo>) {
-        self.repo
-            .set_missile_info(data.map(|item| item.convert()).collect());
+        self.repo.set_missile_info(
+            data.map(|((p_id, m_id), pos, vel, acc)| (p_id, m_id, pos, vel, acc))
+                .map(|item| item.convert())
+                .collect(),
+        );
     }
 }
 
