@@ -17,6 +17,12 @@ pub mod repo_interfaces {
 
     use crate::entities::Vec2;
 
+    /// Supertrait for all in-game state
+    pub trait InGameState:
+        PlayerMovementDataGateway + ShootDataGateway + GravityDataGateway + IntegrateDataGateway
+    {
+    }
+
     /// Trait to implement data marshalling when data crosses an architectural boundary
     pub trait Marshalling<To> {
         fn convert(&self) -> To;
@@ -36,22 +42,17 @@ pub mod repo_interfaces {
     }
 
     /// Player Id
-    pub type PlayerId = &'static str;
+    pub type PlayerId = usize;
     /// Exchange format for Player Id
-    pub type PlayerIdData = &'static str;
-    impl Marshalling<&'static str> for &'static str {
+    pub type PlayerIdData = PlayerId;
+    impl Marshalling<PlayerId> for PlayerIdData {
         fn convert(&self) -> PlayerId {
-            self
+            *self
         }
     }
 
     pub type MissileId = usize;
     pub type MissileIdData = MissileId;
-    impl Marshalling<usize> for usize {
-        fn convert(&self) -> MissileId {
-            *self
-        }
-    }
 
     /// Generic implementations for tuples (this could be done much more elegantly with a macro)
     impl<I1, O1> Marshalling<(O1,)> for (I1,)

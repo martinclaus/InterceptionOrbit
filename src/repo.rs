@@ -42,8 +42,8 @@ impl GameState {
             player: HashMap::with_capacity(PLAYER_CAPACITY),
             stars: Vec::new(),
         };
-        state.add_player("1");
-        state.add_player("2");
+        state.add_player(1);
+        state.add_player(2);
         state
     }
 
@@ -55,29 +55,43 @@ impl GameState {
     }
 
     // TODO: Propagate error
-    fn get_player(&self, id: PlayerIdData) -> &PlayerState {
+    fn get_player(&self, id: &PlayerIdData) -> &PlayerState {
         self.player.get(id).expect("Player not found")
     }
 
     // TODO: Propagate error
-    fn get_player_mut(&mut self, id: PlayerIdData) -> &mut PlayerState {
+    fn get_player_mut(&mut self, id: &PlayerIdData) -> &mut PlayerState {
         self.player.get_mut(id).expect("Player not found")
     }
 
-    fn add_missile(&mut self, player_id: PlayerIdData, data: MissileState) {
+    fn add_missile(&mut self, player_id: &PlayerIdData, data: MissileState) {
         self.get_player_mut(player_id).missiles.push(data);
     }
 
-    fn get_missile(&self, player_id: PlayerIdData, missile_id: MissileIdData) -> &MissileState {
+    fn get_missile(&self, player_id: &PlayerIdData, missile_id: MissileIdData) -> &MissileState {
         &self.get_player(player_id).missiles[missile_id]
     }
 
     fn get_missile_mut(
         &mut self,
-        player_id: PlayerIdData,
+        player_id: &PlayerIdData,
         missile_id: MissileIdData,
     ) -> &mut MissileState {
         &mut self.get_player_mut(player_id).missiles[missile_id]
+    }
+
+    fn iter_player(&self) -> impl Iterator<Item = (PlayerId, &PlayerState)> {
+        self.player.iter().map(|(id, data)| (*id, data))
+    }
+
+    fn iter_missiles(&self) -> impl Iterator<Item = (PlayerId, MissileId, &MissileState)> {
+        self.player.iter().flat_map(|(p_id, player)| {
+            player
+                .missiles
+                .iter()
+                .enumerate()
+                .map(|(m_id, missile)| (*p_id, m_id, missile))
+        })
     }
 
     /// Add a new Star
@@ -87,19 +101,19 @@ impl GameState {
 }
 
 impl PlayerMovementDataGateway for RefCell<GameState> {
-    fn get_player_orientation(&self, id: PlayerIdData) -> f32 {
+    fn get_player_orientation(&self, id: &PlayerIdData) -> f32 {
         self.borrow().get_player(id).player_object.angle
     }
 
-    fn set_player_orientation(&self, id: PlayerIdData, orientation: f32) {
+    fn set_player_orientation(&self, id: &PlayerIdData, orientation: f32) {
         self.borrow_mut().get_player_mut(id).player_object.angle = orientation
     }
 
-    fn get_player_acceleration(&self, id: PlayerIdData) -> Vec2Data {
+    fn get_player_acceleration(&self, id: &PlayerIdData) -> Vec2Data {
         self.borrow().get_player(id).player_object.acceleration
     }
 
-    fn set_player_acceleration(&self, id: PlayerIdData, acceleration: Vec2Data) {
+    fn set_player_acceleration(&self, id: &PlayerIdData, acceleration: Vec2Data) {
         self.borrow_mut()
             .get_player_mut(id)
             .player_object
@@ -108,21 +122,26 @@ impl PlayerMovementDataGateway for RefCell<GameState> {
 }
 
 impl ShootDataGateway for RefCell<GameState> {
-    fn get_player_pos_and_velocity(&self, id: PlayerIdData) -> PlayerPosAndVelocityData {
-        let state = self.borrow();
-        let player = state.get_player(id);
+    fn get_player_pos_and_velocity(&self, id: &PlayerIdData) -> PlayerPosAndVelocityData {
+        // let state = self.borrow();
+        let MovingObject {
+            position: pos,
+            angle,
+            velocity,
+            acceleration: _,
+        } = self.borrow().get_player(id).player_object;
         PlayerPosAndVelocityData {
-            pos: player.player_object.position,
-            angle: player.player_object.angle,
-            velocity: player.player_object.velocity,
+            pos,
+            angle,
+            velocity,
         }
     }
 
-    fn get_player_missile_count(&self, id: PlayerIdData) -> usize {
+    fn get_player_missile_count(&self, id: &PlayerIdData) -> usize {
         self.borrow().get_player(id).missiles.len()
     }
 
-    fn create_missile_for_player(&self, id: PlayerIdData, missile: MissileLaunchData) {
+    fn create_missile_for_player(&self, id: &PlayerIdData, missile: MissileLaunchData) {
         let missile = MovingObject {
             position: missile.pos,
             angle: missile.angle,
@@ -139,11 +158,9 @@ impl GravityDataGateway for RefCell<GameState> {
     }
 
     fn get_player_pos_and_acc(&self) -> Vec<(PlayerIdData, Vec2Data, Vec2Data)> {
-        let state = self.borrow();
-        state
-            .player
-            .iter()
-            .map(|(&id, p_state)| {
+        self.borrow()
+            .iter_player()
+            .map(|(id, p_state)| {
                 (
                     id,
                     p_state.player_object.position,
@@ -154,24 +171,16 @@ impl GravityDataGateway for RefCell<GameState> {
     }
 
     fn get_missile_pos_and_acc(&self) -> Vec<(PlayerIdData, MissileIdData, Vec2Data, Vec2Data)> {
-        let state = self.borrow();
-        let mut result = Vec::new();
-        state.player.iter().for_each(|(&pid, p_state)| {
-            result.extend(
-                p_state
-                    .missiles
-                    .iter()
-                    .enumerate()
-                    .map(|(mid, m_data)| (pid, mid, m_data.position, m_data.acceleration)),
-            );
-        });
-        result
+        self.borrow()
+            .iter_missiles()
+            .map(|(p_id, m_id, missile)| (p_id, m_id, missile.position, missile.acceleration))
+            .collect()
     }
 
     fn set_acceleration_for_player(&self, updates: Vec<(PlayerIdData, Vec2Data)>) {
         let mut state = self.borrow_mut();
         updates.into_iter().for_each(|(id, acceleration)| {
-            state.get_player_mut(id).player_object.acceleration = acceleration
+            state.get_player_mut(&id).player_object.acceleration = acceleration
         });
     }
 
@@ -180,16 +189,67 @@ impl GravityDataGateway for RefCell<GameState> {
         updates
             .into_iter()
             .for_each(|(player_id, missile_id, acceleration)| {
-                state.get_missile_mut(player_id, missile_id).acceleration = acceleration
+                state.get_missile_mut(&player_id, missile_id).acceleration = acceleration
             });
     }
 }
+
+impl IntegrateDataGateway for RefCell<GameState> {
+    fn get_player_info(&self) -> Vec<(PlayerIdData, Vec2Data, Vec2Data, Vec2Data)> {
+        self.borrow()
+            .iter_player()
+            .map(|(id, player)| {
+                (
+                    id,
+                    player.player_object.position,
+                    player.player_object.velocity,
+                    player.player_object.acceleration,
+                )
+            })
+            .collect()
+    }
+
+    fn get_missile_info(&self) -> Vec<(PlayerIdData, MissileIdData, Vec2Data, Vec2Data, Vec2Data)> {
+        self.borrow()
+            .iter_missiles()
+            .map(|(p_id, m_id, missile)| {
+                (
+                    p_id,
+                    m_id,
+                    missile.position,
+                    missile.velocity,
+                    missile.acceleration,
+                )
+            })
+            .collect()
+    }
+
+    fn set_player_info(&self, data: Vec<(PlayerIdData, Vec2Data, Vec2Data, Vec2Data)>) {
+        let mut state = self.borrow_mut();
+        for (p_id, pos, vel, acc) in data {
+            let player = &mut state.get_player_mut(&p_id).player_object;
+            player.position = pos;
+            player.velocity = vel;
+            player.acceleration = acc;
+        }
+    }
+
+    fn set_missile_info(
+        &self,
+        data: Vec<(PlayerIdData, MissileIdData, Vec2Data, Vec2Data, Vec2Data)>,
+    ) {
+        todo!()
+    }
+}
+
+impl InGameState for RefCell<GameState> {}
+
 #[cfg(test)]
 mod test {
     use std::cell::RefCell;
 
     use crate::{
-        physics::{GravityDataGateway, StarData},
+        physics::{GravityDataGateway, IntegrateDataGateway, StarData},
         user_input::{MissileLaunchData, PlayerMovementDataGateway, ShootDataGateway},
     };
 
@@ -198,46 +258,44 @@ mod test {
     #[test]
     fn new_player_has_no_missiles() {
         let mut state = GameState::new();
-        state.add_player("id");
-        assert_eq!(state.get_player("id").missiles.len(), 0)
+        state.add_player(0);
+        assert_eq!(state.get_player(&0).missiles.len(), 0)
     }
 
+    //////////////////////////
+    // PlayerMovementDG impl
+    //////////////////////////
     #[test]
     fn angle_updated_correctly() {
         let angle = 3.0;
         let state = RefCell::new(GameState::new());
-        state.borrow_mut().add_player("id");
-        state.set_player_orientation("id", angle);
-        assert_eq!(state.get_player_orientation("id"), angle);
+        state.borrow_mut().add_player(0);
+        state.set_player_orientation(&0, angle);
+        assert_eq!(state.get_player_orientation(&0), angle);
     }
 
     #[test]
     fn acceleration_set_correctly() {
         let acc = [3.0, 1000.0];
         let state = RefCell::new(GameState::new());
-        state.borrow_mut().add_player("id");
-        state.set_player_acceleration("id", acc);
-        assert_eq!(state.get_player_acceleration("id"), acc);
+        state.borrow_mut().add_player(0);
+        state.set_player_acceleration(&0, acc);
+        assert_eq!(state.get_player_acceleration(&0), acc);
     }
 
+    //////////////////////////
+    // ShootDG impl
+    //////////////////////////
     #[test]
     fn player_pos_and_vel_retrieved_correctly() {
         let (pos, angle, vel) = ([0.0, 200.0], 4.0, [10.0, 4.0]);
         let state = RefCell::new(GameState::new());
-        state.borrow_mut().add_player("id");
-        state
-            .borrow_mut()
-            .get_player_mut("id")
-            .player_object
-            .position = pos;
-        state.borrow_mut().get_player_mut("id").player_object.angle = angle;
-        state
-            .borrow_mut()
-            .get_player_mut("id")
-            .player_object
-            .velocity = vel;
+        state.borrow_mut().add_player(0);
+        state.borrow_mut().get_player_mut(&0).player_object.position = pos;
+        state.borrow_mut().get_player_mut(&0).player_object.angle = angle;
+        state.borrow_mut().get_player_mut(&0).player_object.velocity = vel;
 
-        let res = state.get_player_pos_and_velocity("id");
+        let res = state.get_player_pos_and_velocity(&0);
         assert_eq!(res.pos, pos);
         assert_eq!(res.angle, angle);
         assert_eq!(res.velocity, vel);
@@ -251,13 +309,13 @@ mod test {
             velocity: [10.0, 40.0],
         };
         let state = RefCell::new(GameState::new());
-        state.borrow_mut().add_player("id");
+        state.borrow_mut().add_player(0);
 
-        state.create_missile_for_player("id", data);
+        state.create_missile_for_player(&0, data);
 
         let state_ref = state.borrow();
-        assert_eq!(state_ref.get_player("id").missiles.len(), 1);
-        let created_missile = state_ref.get_missile("id", 0);
+        assert_eq!(state_ref.get_player(&0).missiles.len(), 1);
+        let created_missile = state_ref.get_missile(&0, 0);
         assert_eq!(created_missile.position, data.pos);
         assert_eq!(created_missile.angle, data.angle);
         assert_eq!(created_missile.velocity, data.velocity);
@@ -267,15 +325,16 @@ mod test {
     #[test]
     fn missiles_counted_correctly() {
         let state = RefCell::new(GameState::new());
-        state.borrow_mut().add_player("id");
+        state.borrow_mut().add_player(0);
         for _ in 0..4 {
-            state
-                .borrow_mut()
-                .add_missile("id", MissileState::default())
+            state.borrow_mut().add_missile(&0, MissileState::default())
         }
-        assert_eq!(state.get_player_missile_count("id"), 4)
+        assert_eq!(state.get_player_missile_count(&0), 4)
     }
 
+    //////////////////////////
+    // GravityDG impl
+    //////////////////////////
     #[test]
     fn stars_correctly_returned() {
         let state = RefCell::new(GameState::new());
@@ -296,13 +355,13 @@ mod test {
         let state = RefCell::new(GameState::new());
         {
             let mut state_ref = state.borrow_mut();
-            let mut player1 = state_ref.get_player_mut("1");
+            let mut player1 = state_ref.get_player_mut(&1);
             player1.player_object.position = [4.0, 1.0];
             player1.player_object.acceleration = [2.0, 1.0];
         }
         {
             let mut state_ref = state.borrow_mut();
-            let mut player2 = state_ref.get_player_mut("2");
+            let mut player2 = state_ref.get_player_mut(&2);
             player2.player_object.position = [1.0, 4.0];
             player2.player_object.acceleration = [1.0, 2.0];
         }
@@ -312,8 +371,8 @@ mod test {
         assert_eq!(result.len(), 2);
         for id_pos_acc in result {
             match id_pos_acc.0 {
-                "1" => assert_eq!(id_pos_acc, ("1", [4.0, 1.0], [2.0, 1.0])),
-                "2" => assert_eq!(id_pos_acc, ("2", [1.0, 4.0], [1.0, 2.0])),
+                1 => assert_eq!(id_pos_acc, (1, [4.0, 1.0], [2.0, 1.0])),
+                2 => assert_eq!(id_pos_acc, (2, [1.0, 4.0], [1.0, 2.0])),
                 _ => panic!("Unexpected player id encountered"),
             }
         }
@@ -322,8 +381,9 @@ mod test {
     #[test]
     fn missile_pos_and_acc_correctly_returned() {
         let state = RefCell::new(GameState::new());
+
         state.borrow_mut().add_missile(
-            "1",
+            &1,
             MovingObject {
                 position: [0.0, 0.0],
                 acceleration: [0.0, 0.0],
@@ -331,7 +391,7 @@ mod test {
             },
         );
         state.borrow_mut().add_missile(
-            "1",
+            &1,
             MovingObject {
                 position: [1.0, 0.0],
                 acceleration: [0.0, 1.0],
@@ -339,7 +399,7 @@ mod test {
             },
         );
         state.borrow_mut().add_missile(
-            "2",
+            &2,
             MovingObject {
                 position: [0.0, 1.0],
                 acceleration: [1.0, 0.0],
@@ -353,15 +413,15 @@ mod test {
         let mut have_seen = (false, false, false);
         for item in result {
             match item {
-                ("1", 0, pos, acc) => {
+                (1, 0, pos, acc) => {
                     assert_eq!((pos, acc), ([0.0, 0.0], [0.0, 0.0]));
                     have_seen.0 = true;
                 }
-                ("1", 1, pos, acc) => {
+                (1, 1, pos, acc) => {
                     assert_eq!((pos, acc), ([1.0, 0.0], [0.0, 1.0]));
                     have_seen.1 = true;
                 }
-                ("2", 0, pos, acc) => {
+                (2, 0, pos, acc) => {
                     assert_eq!((pos, acc), ([0.0, 1.0], [1.0, 0.0]));
                     have_seen.2 = true;
                 }
@@ -375,16 +435,16 @@ mod test {
     fn player_acc_correclty_updated() {
         let state = RefCell::new(GameState::new());
 
-        state.set_acceleration_for_player(vec![("1", [20.0, 10.0]), ("2", [10.0, 20.0])]);
-        state.set_acceleration_for_player(vec![("1", [5.0, 2.0])]);
+        state.set_acceleration_for_player(vec![(1, [20.0, 10.0]), (2, [10.0, 20.0])]);
+        state.set_acceleration_for_player(vec![(1, [5.0, 2.0])]);
 
         let state_ref = state.borrow();
         assert_eq!(
-            state_ref.get_player("1").player_object.acceleration,
+            state_ref.get_player(&1).player_object.acceleration,
             [5.0, 2.0]
         );
         assert_eq!(
-            state_ref.get_player("2").player_object.acceleration,
+            state_ref.get_player(&2).player_object.acceleration,
             [10.0, 20.0]
         );
     }
@@ -392,19 +452,84 @@ mod test {
     #[test]
     fn missiles_correctly_updated() {
         let state = RefCell::new(GameState::new());
-        state.borrow_mut().add_missile("1", MovingObject::default());
-        state.borrow_mut().add_missile("1", MovingObject::default());
-        state.borrow_mut().add_missile("2", MovingObject::default());
+        state.borrow_mut().add_missile(&1, MovingObject::default());
+        state.borrow_mut().add_missile(&1, MovingObject::default());
+        state.borrow_mut().add_missile(&2, MovingObject::default());
 
         state.set_acceleration_for_missiles(vec![
-            ("1", 0, [20.0, 10.0]),
-            ("1", 1, [40.0, 10.0]),
-            ("2", 0, [10.0, 20.0]),
+            (1, 0, [20.0, 10.0]),
+            (1, 1, [40.0, 10.0]),
+            (2, 0, [10.0, 20.0]),
         ]);
 
         let state_ref = state.borrow();
-        assert_eq!(state_ref.get_missile("1", 0).acceleration, [20.0, 10.0]);
-        assert_eq!(state_ref.get_missile("1", 1).acceleration, [40.0, 10.0]);
-        assert_eq!(state_ref.get_missile("2", 0).acceleration, [10.0, 20.0]);
+        assert_eq!(state_ref.get_missile(&1, 0).acceleration, [20.0, 10.0]);
+        assert_eq!(state_ref.get_missile(&1, 1).acceleration, [40.0, 10.0]);
+        assert_eq!(state_ref.get_missile(&2, 0).acceleration, [10.0, 20.0]);
+    }
+
+    //////////////////////////
+    // IntegrateDG impl
+    //////////////////////////
+    #[test]
+    fn player_pos_vel_and_acc_corectly_returned() {
+        let state = RefCell::new(GameState::new());
+        {
+            let mut state_ref = state.borrow_mut();
+            let mut player1 = state_ref.get_player_mut(&1);
+            player1.player_object = MovingObject {
+                position: [4.0, 1.0],
+                velocity: [4.0, 1.0],
+                acceleration: [2.0, 1.0],
+                ..Default::default()
+            }
+        }
+        {
+            let mut state_ref = state.borrow_mut();
+            let mut player2 = state_ref.get_player_mut(&2);
+            player2.player_object = MovingObject {
+                position: [1.0, 4.0],
+                velocity: [1.0, 5.0],
+                acceleration: [1.0, 2.0],
+                ..Default::default()
+            }
+        }
+
+        let result = <RefCell<GameState> as IntegrateDataGateway>::get_player_info(&state);
+
+        assert_eq!(result.len(), 2);
+        for id_pos_acc in result {
+            match id_pos_acc.0 {
+                1 => assert_eq!(id_pos_acc, (1, [4.0, 1.0], [4.0, 1.0], [2.0, 1.0])),
+                2 => assert_eq!(id_pos_acc, (2, [1.0, 4.0], [1.0, 5.0], [1.0, 2.0])),
+                _ => panic!("Unexpected player id encountered"),
+            }
+        }
+    }
+
+    #[test]
+    fn missile_pos_vel_and_acc_correctly_returned() {
+        let state = RefCell::new(GameState::new());
+        {
+            let mut state = state.borrow_mut();
+            for (pid, y) in [(1, 1.0), (1, 2.0), (2, 3.0)] {
+                state.add_missile(
+                    &pid,
+                    MovingObject {
+                        position: [0.0, y],
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+        let result = <RefCell<GameState> as IntegrateDataGateway>::get_missile_info(&state);
+        for (p_id, m_id, pos, _, _) in result {
+            match (p_id, m_id) {
+                (1, 0) => assert_eq!(pos, [0.0, 1.0]),
+                (1, 1) => assert_eq!(pos, [0.0, 2.0]),
+                (2, 0) => assert_eq!(pos, [0.0, 3.0]),
+                _ => panic!("Unexpected player id or missile id encountered. Got ({p_id}, {m_id})"),
+            }
+        }
     }
 }

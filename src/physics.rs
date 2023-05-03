@@ -274,8 +274,8 @@ mod gravity {
                     pos: [1.0, 0.0],
                     mass: 1.0,
                 }],
-                player_pos: vec![("1", [11.0, 0.0]), ("2", [1.0, -10.0])],
-                player_acc: vec![("1", [0.0, 1.0]), ("2", [1.0, 4.0])],
+                player_pos: vec![(1, [11.0, 0.0]), (2, [1.0, -10.0])],
+                player_acc: vec![(1, [0.0, 1.0]), (2, [1.0, 4.0])],
                 ..MockData::default()
             };
             let repo = setup_gravity_test(data);
@@ -470,8 +470,8 @@ mod integrate {
         fn integrate_updates_player_pos_correctly() {
             let data = MockData {
                 player_info: [
-                    ("0", ([1.0, 0.0], [1.0, 1.0], [0.0, 0.0])),
-                    ("1", ([1.0, 0.0], [0.0, 1.0], [0.0, 0.0])),
+                    (0, ([1.0, 0.0], [1.0, 1.0], [0.0, 0.0])),
+                    (1, ([1.0, 0.0], [0.0, 1.0], [0.0, 0.0])),
                 ]
                 .into(),
                 ..MockData::default()
@@ -480,22 +480,16 @@ mod integrate {
             let integrate = Integrate::new(gateway.clone());
             integrate.execute(2.0);
             let repo = gateway.borrow();
-            assert_eq!(
-                repo.data.player_info.clone().get("0").unwrap().0,
-                [3.0, 2.0]
-            );
-            assert_eq!(
-                repo.data.player_info.clone().get("1").unwrap().0,
-                [1.0, 2.0]
-            );
+            assert_eq!(repo.data.player_info.clone().get(&0).unwrap().0, [3.0, 2.0]);
+            assert_eq!(repo.data.player_info.clone().get(&1).unwrap().0, [1.0, 2.0]);
         }
 
         #[test]
         fn integrate_updates_player_vel_correctly() {
             let data = MockData {
                 player_info: [
-                    ("0", ([0.0, 0.0], [1.0, 1.0], [1.0, 0.0])),
-                    ("1", ([0.0, 0.0], [0.0, 1.0], [1.0, 1.0])),
+                    (0, ([0.0, 0.0], [1.0, 1.0], [1.0, 0.0])),
+                    (1, ([0.0, 0.0], [0.0, 1.0], [1.0, 1.0])),
                 ]
                 .into(),
                 ..MockData::default()
@@ -504,22 +498,16 @@ mod integrate {
             let integrate = Integrate::new(gateway.clone());
             integrate.execute(2.0);
             let repo = gateway.borrow();
-            assert_eq!(
-                repo.data.player_info.clone().get("0").unwrap().1,
-                [3.0, 1.0]
-            );
-            assert_eq!(
-                repo.data.player_info.clone().get("1").unwrap().1,
-                [2.0, 3.0]
-            );
+            assert_eq!(repo.data.player_info.clone().get(&0).unwrap().1, [3.0, 1.0]);
+            assert_eq!(repo.data.player_info.clone().get(&1).unwrap().1, [2.0, 3.0]);
         }
 
         #[test]
         fn integrate_set_player_acceleration_to_zero() {
             let data = MockData {
                 player_info: [
-                    ("0", ([0.0, 0.0], [1.0, 1.0], [1.0, 0.0])),
-                    ("1", ([0.0, 0.0], [0.0, 1.0], [1.0, 1.0])),
+                    (0, ([0.0, 0.0], [1.0, 1.0], [1.0, 0.0])),
+                    (1, ([0.0, 0.0], [0.0, 1.0], [1.0, 1.0])),
                 ]
                 .into(),
                 ..MockData::default()
@@ -528,14 +516,8 @@ mod integrate {
             let integrate = Integrate::new(gateway.clone());
             integrate.execute(2.0);
             let repo = gateway.borrow();
-            assert_eq!(
-                repo.data.player_info.clone().get("0").unwrap().2,
-                [0.0, 0.0]
-            );
-            assert_eq!(
-                repo.data.player_info.clone().get("1").unwrap().2,
-                [0.0, 0.0]
-            );
+            assert_eq!(repo.data.player_info.clone().get(&0).unwrap().2, [0.0, 0.0]);
+            assert_eq!(repo.data.player_info.clone().get(&1).unwrap().2, [0.0, 0.0]);
         }
 
         #[test]
@@ -550,9 +532,9 @@ mod integrate {
         fn integrate_updates_missile_pos_correctly() {
             let data = MockData {
                 missile_info: [
-                    (("0", 0), ([1.0, 0.0], [1.0, 1.0], [0.0, 0.0])),
-                    (("1", 0), ([1.0, 0.0], [0.0, 1.0], [0.0, 0.0])),
-                    (("1", 1), ([1.0, 0.0], [1.0, 1.0], [0.0, 0.0])),
+                    ((0, 0), ([1.0, 0.0], [1.0, 1.0], [0.0, 0.0])),
+                    ((1, 0), ([1.0, 0.0], [0.0, 1.0], [0.0, 0.0])),
+                    ((1, 1), ([1.0, 0.0], [1.0, 1.0], [0.0, 0.0])),
                 ]
                 .into(),
                 ..MockData::default()
@@ -562,15 +544,15 @@ mod integrate {
             integrate.execute(2.0);
             let repo = gateway.borrow();
             assert_eq!(
-                repo.data.missile_info.clone().get(&("0", 0)).unwrap().0,
+                repo.data.missile_info.clone().get(&(0, 0)).unwrap().0,
                 [3.0, 2.0]
             );
             assert_eq!(
-                repo.data.missile_info.clone().get(&("1", 0)).unwrap().0,
+                repo.data.missile_info.clone().get(&(1, 0)).unwrap().0,
                 [1.0, 2.0]
             );
             assert_eq!(
-                repo.data.missile_info.clone().get(&("1", 1)).unwrap().0,
+                repo.data.missile_info.clone().get(&(1, 1)).unwrap().0,
                 [3.0, 2.0]
             );
         }
@@ -579,9 +561,9 @@ mod integrate {
         fn integrate_updates_missile_vel_correctly() {
             let data = MockData {
                 missile_info: [
-                    (("0", 0), ([0.0, 0.0], [1.0, 1.0], [1.0, 0.0])),
-                    (("1", 0), ([0.0, 0.0], [0.0, 1.0], [1.0, 1.0])),
-                    (("1", 1), ([0.0, 0.0], [1.0, 1.0], [1.0, 0.0])),
+                    ((0, 0), ([0.0, 0.0], [1.0, 1.0], [1.0, 0.0])),
+                    ((1, 0), ([0.0, 0.0], [0.0, 1.0], [1.0, 1.0])),
+                    ((1, 1), ([0.0, 0.0], [1.0, 1.0], [1.0, 0.0])),
                 ]
                 .into(),
                 ..MockData::default()
@@ -591,15 +573,15 @@ mod integrate {
             integrate.execute(2.0);
             let repo = gateway.borrow();
             assert_eq!(
-                repo.data.missile_info.clone().get(&("0", 0)).unwrap().1,
+                repo.data.missile_info.clone().get(&(0, 0)).unwrap().1,
                 [3.0, 1.0]
             );
             assert_eq!(
-                repo.data.missile_info.clone().get(&("1", 0)).unwrap().1,
+                repo.data.missile_info.clone().get(&(1, 0)).unwrap().1,
                 [2.0, 3.0]
             );
             assert_eq!(
-                repo.data.missile_info.clone().get(&("1", 1)).unwrap().1,
+                repo.data.missile_info.clone().get(&(1, 1)).unwrap().1,
                 [3.0, 1.0]
             );
         }
@@ -608,9 +590,9 @@ mod integrate {
         fn integrate_set_missile_acceleration_to_zero() {
             let data = MockData {
                 missile_info: [
-                    (("0", 0), ([0.0, 0.0], [1.0, 1.0], [1.0, 0.0])),
-                    (("1", 0), ([0.0, 0.0], [0.0, 1.0], [1.0, 1.0])),
-                    (("1", 1), ([0.0, 0.0], [1.0, 1.0], [1.0, 0.0])),
+                    ((0, 0), ([0.0, 0.0], [1.0, 1.0], [1.0, 0.0])),
+                    ((1, 0), ([0.0, 0.0], [0.0, 1.0], [1.0, 1.0])),
+                    ((1, 1), ([0.0, 0.0], [1.0, 1.0], [1.0, 0.0])),
                 ]
                 .into(),
                 ..MockData::default()
@@ -620,15 +602,15 @@ mod integrate {
             integrate.execute(2.0);
             let repo = gateway.borrow();
             assert_eq!(
-                repo.data.missile_info.clone().get(&("0", 0)).unwrap().2,
+                repo.data.missile_info.clone().get(&(0, 0)).unwrap().2,
                 [0.0; 2]
             );
             assert_eq!(
-                repo.data.missile_info.clone().get(&("1", 0)).unwrap().2,
+                repo.data.missile_info.clone().get(&(1, 0)).unwrap().2,
                 [0.0; 2]
             );
             assert_eq!(
-                repo.data.missile_info.clone().get(&("1", 1)).unwrap().2,
+                repo.data.missile_info.clone().get(&(1, 1)).unwrap().2,
                 [0.0; 2]
             );
         }
