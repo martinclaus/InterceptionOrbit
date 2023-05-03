@@ -71,7 +71,7 @@ impl Gravity {
     }
 
     /// Get position and acceleration of all player objects
-    fn get_player_pos_and_acc(&self) -> impl Iterator<Item = (PlayerId, Vec2, Vec2)> {
+    fn get_player_pos_and_acc(&self) -> impl Iterator<Item = PlayerData> {
         self.repo
             .get_player_pos_and_acc()
             .into_iter()
@@ -93,27 +93,27 @@ impl Gravity {
 
     fn comput_gravitation_for_objects<'a, T>(
         &self,
-        objs: impl Iterator<Item = (T, Vec2, Vec2)> + 'a,
+        objs: impl Iterator<Item = ObjData<T>> + 'a,
         stars: &'a [Star],
     ) -> impl Iterator<Item = (T, Vec2)> + 'a {
-        objs.map(|(id, pos, acc)| {
+        objs.map(|obj| {
             (
-                id,
-                acc + stars
-                    .iter()
-                    .map(|star| gravity(star.pos, star.mass, pos))
-                    .sum(),
+                obj.id,
+                obj.acc
+                    + stars
+                        .iter()
+                        .map(|star| gravity(star.pos, star.mass, obj.pos))
+                        .sum(),
             )
         })
     }
 
     /// Get position and acceleration of all missiles. IDs are folded into single composit key.
-    fn get_missile_pos_and_acc(&self) -> impl Iterator<Item = ((PlayerId, MissileId), Vec2, Vec2)> {
+    fn get_missile_pos_and_acc(&self) -> impl Iterator<Item = MissileData> {
         self.repo
             .get_missile_pos_and_acc()
             .into_iter()
             .map(|data| data.convert())
-            .map(|(p_id, m_id, pos, acc)| ((p_id, m_id), pos, acc))
     }
 
     /// Update acceleration for missile objects
@@ -121,15 +121,43 @@ impl Gravity {
         &self,
         updates: impl Iterator<Item = ((PlayerId, MissileId), Vec2)>,
     ) {
-        self.repo.set_acceleration_for_missiles(
-            updates
-                .map(|((p_id, m_id), acc)| (p_id, m_id, acc))
-                .map(|data| data.convert())
-                .collect(),
-        );
+        self.repo
+            .set_acceleration_for_missiles(updates.map(|data| data.convert()).collect());
     }
 }
 
+struct ObjData<T> {
+    id: T,
+    pos: Vec2,
+    acc: Vec2,
+}
+
+type PlayerData = ObjData<PlayerId>;
+impl Marshalling<PlayerData> for (PlayerIdData, Vec2Data, Vec2Data) {
+    fn convert(&self) -> PlayerData {
+        PlayerData {
+            id: self.0.convert(),
+            pos: self.1.convert(),
+            acc: self.2.convert(),
+        }
+    }
+}
+
+type MissileData = ObjData<(PlayerId, MissileId)>;
+impl Marshalling<MissileData> for (PlayerIdData, MissileIdData, Vec2Data, Vec2Data) {
+    fn convert(&self) -> MissileData {
+        MissileData {
+            id: (self.0.convert(), self.1.convert()),
+            pos: self.2.convert(),
+            acc: self.3.convert(),
+        }
+    }
+}
+impl Marshalling<(PlayerIdData, MissileIdData, Vec2Data)> for ((PlayerId, MissileId), Vec2) {
+    fn convert(&self) -> (PlayerIdData, MissileIdData, Vec2Data) {
+        (self.0 .0, self.0 .1, self.1).convert()
+    }
+}
 /// Data repository interface for gravity use case.
 pub trait GravityDataGateway {
     /// Get all [`Star`] objects
