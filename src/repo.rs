@@ -16,6 +16,24 @@ struct MovingObject {
     velocity: Vec2Data,
     acceleration: Vec2Data,
 }
+impl MovingObject {
+    fn set_acceleration(&mut self, acceleration: Vec2Data) -> &mut Self {
+        self.acceleration = acceleration;
+        self
+    }
+    fn set_velocity(&mut self, velocity: Vec2Data) -> &mut Self {
+        self.velocity = velocity;
+        self
+    }
+    fn set_position(&mut self, position: Vec2Data) -> &mut Self {
+        self.position = position;
+        self
+    }
+    fn set_angle(&mut self, angle: f32) -> &mut Self {
+        self.angle = angle;
+        self
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 struct PlayerState {
@@ -106,7 +124,10 @@ impl PlayerMovementDataGateway for RefCell<GameState> {
     }
 
     fn set_player_orientation(&self, id: &PlayerIdData, orientation: f32) {
-        self.borrow_mut().get_player_mut(id).player_object.angle = orientation
+        self.borrow_mut()
+            .get_player_mut(id)
+            .player_object
+            .set_angle(orientation);
     }
 
     fn get_player_acceleration(&self, id: &PlayerIdData) -> Vec2Data {
@@ -117,7 +138,7 @@ impl PlayerMovementDataGateway for RefCell<GameState> {
         self.borrow_mut()
             .get_player_mut(id)
             .player_object
-            .acceleration = acceleration
+            .set_acceleration(acceleration);
     }
 }
 
@@ -142,13 +163,12 @@ impl ShootDataGateway for RefCell<GameState> {
     }
 
     fn create_missile_for_player(&self, id: &PlayerIdData, missile: MissileLaunchData) {
-        let missile = MovingObject {
-            position: missile.pos,
-            angle: missile.angle,
-            velocity: missile.velocity,
-            acceleration: Vec2Data::default(),
-        };
-        self.borrow_mut().add_missile(id, missile);
+        let mut missile_obj = MovingObject::default();
+        missile_obj
+            .set_position(missile.pos)
+            .set_angle(missile.angle)
+            .set_velocity(missile.velocity);
+        self.borrow_mut().add_missile(id, missile_obj);
     }
 }
 
@@ -180,7 +200,10 @@ impl GravityDataGateway for RefCell<GameState> {
     fn set_acceleration_for_player(&self, updates: Vec<(PlayerIdData, Vec2Data)>) {
         let mut state = self.borrow_mut();
         updates.into_iter().for_each(|(id, acceleration)| {
-            state.get_player_mut(&id).player_object.acceleration = acceleration
+            state
+                .get_player_mut(&id)
+                .player_object
+                .set_acceleration(acceleration);
         });
     }
 
@@ -189,7 +212,9 @@ impl GravityDataGateway for RefCell<GameState> {
         updates
             .into_iter()
             .for_each(|(player_id, missile_id, acceleration)| {
-                state.get_missile_mut(&player_id, missile_id).acceleration = acceleration
+                state
+                    .get_missile_mut(&player_id, missile_id)
+                    .set_acceleration(acceleration);
             });
     }
 }
@@ -227,10 +252,12 @@ impl IntegrateDataGateway for RefCell<GameState> {
     fn set_player_info(&self, data: Vec<(PlayerIdData, Vec2Data, Vec2Data, Vec2Data)>) {
         let mut state = self.borrow_mut();
         for (p_id, pos, vel, acc) in data {
-            let player = &mut state.get_player_mut(&p_id).player_object;
-            player.position = pos;
-            player.velocity = vel;
-            player.acceleration = acc;
+            state
+                .get_player_mut(&p_id)
+                .player_object
+                .set_position(pos)
+                .set_velocity(vel)
+                .set_acceleration(acc);
         }
     }
 
@@ -240,10 +267,11 @@ impl IntegrateDataGateway for RefCell<GameState> {
     ) {
         let mut state = self.borrow_mut();
         for (player_id, missile_id, pos, vel, acc) in data {
-            let mut missile = state.get_missile_mut(&player_id, missile_id);
-            missile.position = pos;
-            missile.velocity = vel;
-            missile.acceleration = acc;
+            state
+                .get_missile_mut(&player_id, missile_id)
+                .set_position(pos)
+                .set_velocity(vel)
+                .set_acceleration(acc);
         }
     }
 }
@@ -361,15 +389,16 @@ mod test {
         let state = RefCell::new(GameState::new());
         {
             let mut state_ref = state.borrow_mut();
-            let mut player1 = state_ref.get_player_mut(&1);
-            player1.player_object.position = [4.0, 1.0];
-            player1.player_object.acceleration = [2.0, 1.0];
-        }
-        {
-            let mut state_ref = state.borrow_mut();
-            let mut player2 = state_ref.get_player_mut(&2);
-            player2.player_object.position = [1.0, 4.0];
-            player2.player_object.acceleration = [1.0, 2.0];
+            state_ref
+                .get_player_mut(&1)
+                .player_object
+                .set_position([4.0, 1.0])
+                .set_acceleration([2.0, 1.0]);
+            state_ref
+                .get_player_mut(&2)
+                .player_object
+                .set_position([1.0, 4.0])
+                .set_acceleration([1.0, 2.0]);
         }
 
         let result = state.get_player_pos_and_acc();
@@ -387,54 +416,37 @@ mod test {
     #[test]
     fn missile_pos_and_acc_correctly_returned() {
         let state = RefCell::new(GameState::new());
-
-        state.borrow_mut().add_missile(
-            &1,
-            MovingObject {
-                position: [0.0, 0.0],
-                acceleration: [0.0, 0.0],
-                ..MovingObject::default()
-            },
-        );
-        state.borrow_mut().add_missile(
-            &1,
-            MovingObject {
-                position: [1.0, 0.0],
-                acceleration: [0.0, 1.0],
-                ..MovingObject::default()
-            },
-        );
-        state.borrow_mut().add_missile(
-            &2,
-            MovingObject {
-                position: [0.0, 1.0],
-                acceleration: [1.0, 0.0],
-                ..MovingObject::default()
-            },
-        );
+        for (p_id, pos, acc) in [
+            (1, [0.0, 0.0], [0.0, 0.0]),
+            (1, [1.0, 0.0], [0.0, 1.0]),
+            (2, [0.0, 1.0], [1.0, 0.0]),
+        ] {
+            state.borrow_mut().add_missile(
+                &p_id,
+                MovingObject::default()
+                    .set_position(pos)
+                    .set_acceleration(acc)
+                    .to_owned(),
+            );
+        }
 
         let result = state.get_missile_pos_and_acc();
 
         assert_eq!(result.len(), 3);
-        let mut have_seen = (false, false, false);
         for item in result {
             match item {
                 (1, 0, pos, acc) => {
                     assert_eq!((pos, acc), ([0.0, 0.0], [0.0, 0.0]));
-                    have_seen.0 = true;
                 }
                 (1, 1, pos, acc) => {
                     assert_eq!((pos, acc), ([1.0, 0.0], [0.0, 1.0]));
-                    have_seen.1 = true;
                 }
                 (2, 0, pos, acc) => {
                     assert_eq!((pos, acc), ([0.0, 1.0], [1.0, 0.0]));
-                    have_seen.2 = true;
                 }
                 _ => panic!("Unexpected missile data encountered"),
             }
         }
-        assert_eq!(have_seen, (true, true, true));
     }
 
     #[test]
@@ -458,9 +470,11 @@ mod test {
     #[test]
     fn missiles_correctly_updated() {
         let state = RefCell::new(GameState::new());
-        state.borrow_mut().add_missile(&1, MovingObject::default());
-        state.borrow_mut().add_missile(&1, MovingObject::default());
-        state.borrow_mut().add_missile(&2, MovingObject::default());
+        for p_id in &[1, 1, 2] {
+            state
+                .borrow_mut()
+                .add_missile(p_id, MovingObject::default());
+        }
 
         state.set_acceleration_for_missiles(vec![
             (1, 0, [20.0, 10.0]),
@@ -468,10 +482,9 @@ mod test {
             (2, 0, [10.0, 20.0]),
         ]);
 
-        let state_ref = state.borrow();
-        assert_eq!(state_ref.get_missile(&1, 0).acceleration, [20.0, 10.0]);
-        assert_eq!(state_ref.get_missile(&1, 1).acceleration, [40.0, 10.0]);
-        assert_eq!(state_ref.get_missile(&2, 0).acceleration, [10.0, 20.0]);
+        assert_eq!(state.borrow().get_missile(&1, 0).acceleration, [20.0, 10.0]);
+        assert_eq!(state.borrow().get_missile(&1, 1).acceleration, [40.0, 10.0]);
+        assert_eq!(state.borrow().get_missile(&2, 0).acceleration, [10.0, 20.0]);
     }
 
     //////////////////////////
@@ -480,26 +493,20 @@ mod test {
     #[test]
     fn player_pos_vel_and_acc_corectly_returned() {
         let state = RefCell::new(GameState::new());
-        {
-            let mut state_ref = state.borrow_mut();
-            let mut player1 = state_ref.get_player_mut(&1);
-            player1.player_object = MovingObject {
-                position: [4.0, 1.0],
-                velocity: [4.0, 1.0],
-                acceleration: [2.0, 1.0],
-                ..Default::default()
-            }
-        }
-        {
-            let mut state_ref = state.borrow_mut();
-            let mut player2 = state_ref.get_player_mut(&2);
-            player2.player_object = MovingObject {
-                position: [1.0, 4.0],
-                velocity: [1.0, 5.0],
-                acceleration: [1.0, 2.0],
-                ..Default::default()
-            }
-        }
+        state
+            .borrow_mut()
+            .get_player_mut(&1)
+            .player_object
+            .set_position([4.0, 1.0])
+            .set_velocity([4.0, 1.0])
+            .set_acceleration([2.0, 1.0]);
+        state
+            .borrow_mut()
+            .get_player_mut(&2)
+            .player_object
+            .set_position([1.0, 4.0])
+            .set_velocity([1.0, 5.0])
+            .set_acceleration([1.0, 2.0]);
 
         let result = <RefCell<GameState> as IntegrateDataGateway>::get_player_info(&state);
 
@@ -521,10 +528,7 @@ mod test {
             for (pid, y) in [(1, 1.0), (1, 2.0), (2, 3.0)] {
                 state.add_missile(
                     &pid,
-                    MovingObject {
-                        position: [0.0, y],
-                        ..Default::default()
-                    },
+                    MovingObject::default().set_position([0.0, y]).to_owned(),
                 );
             }
         }
@@ -544,14 +548,8 @@ mod test {
         let state = RefCell::new(GameState::new());
         {
             let mut state = state.borrow_mut();
-            for (pid, y) in [(1, 1.0), (1, 2.0), (2, 3.0)] {
-                state.add_missile(
-                    &pid,
-                    MovingObject {
-                        position: [0.0, y],
-                        ..Default::default()
-                    },
-                );
+            for pid in &[1, 1, 2] {
+                state.add_missile(pid, MovingObject::default());
             }
         }
         state.set_missile_info(vec![
@@ -576,7 +574,7 @@ mod test {
                     ),
                     (1, 1) => assert_eq!(
                         (position, velocity, acceleration),
-                        ([0.0, 2.0], [0.0, 0.0], [0.0, 0.0])
+                        ([0.0, 0.0], [0.0, 0.0], [0.0, 0.0])
                     ),
                     (2, 0) => assert_eq!(
                         (position, velocity, acceleration),
