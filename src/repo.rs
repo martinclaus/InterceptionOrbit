@@ -238,7 +238,13 @@ impl IntegrateDataGateway for RefCell<GameState> {
         &self,
         data: Vec<(PlayerIdData, MissileIdData, Vec2Data, Vec2Data, Vec2Data)>,
     ) {
-        todo!()
+        let mut state = self.borrow_mut();
+        for (player_id, missile_id, pos, vel, acc) in data {
+            let mut missile = state.get_missile_mut(&player_id, missile_id);
+            missile.position = pos;
+            missile.velocity = vel;
+            missile.acceleration = acc;
+        }
     }
 }
 
@@ -529,6 +535,57 @@ mod test {
                 (1, 1) => assert_eq!(pos, [0.0, 2.0]),
                 (2, 0) => assert_eq!(pos, [0.0, 3.0]),
                 _ => panic!("Unexpected player id or missile id encountered. Got ({p_id}, {m_id})"),
+            }
+        }
+    }
+
+    #[test]
+    fn missile_pos_vel_and_acc_set_correctly() {
+        let state = RefCell::new(GameState::new());
+        {
+            let mut state = state.borrow_mut();
+            for (pid, y) in [(1, 1.0), (1, 2.0), (2, 3.0)] {
+                state.add_missile(
+                    &pid,
+                    MovingObject {
+                        position: [0.0, y],
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+        state.set_missile_info(vec![
+            (1, 0, [1.0, 2.0], [1.0, 1.0], [2.0, 2.0]),
+            (2, 0, [2.0, 1.0], [2.0, 3.0], [4.0, 5.0]),
+        ]);
+        for p_id in [1, 2] {
+            for (
+                m_id,
+                &MovingObject {
+                    position,
+                    velocity,
+                    acceleration,
+                    angle: _,
+                },
+            ) in state.borrow().get_player(&p_id).missiles.iter().enumerate()
+            {
+                match (p_id, m_id) {
+                    (1, 0) => assert_eq!(
+                        (position, velocity, acceleration),
+                        ([1.0, 2.0], [1.0, 1.0], [2.0, 2.0])
+                    ),
+                    (1, 1) => assert_eq!(
+                        (position, velocity, acceleration),
+                        ([0.0, 2.0], [0.0, 0.0], [0.0, 0.0])
+                    ),
+                    (2, 0) => assert_eq!(
+                        (position, velocity, acceleration),
+                        ([2.0, 1.0], [2.0, 3.0], [4.0, 5.0])
+                    ),
+                    _ => {
+                        panic!("Invalid player_id or missile_id encountered. Got ({p_id}, {m_id})")
+                    }
+                }
             }
         }
     }
