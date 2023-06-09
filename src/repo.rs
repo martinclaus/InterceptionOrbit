@@ -86,6 +86,7 @@ impl GameState {
         self.get_player_mut(player_id).missiles.push(data);
     }
 
+    #[cfg(test)]
     fn get_missile(&self, player_id: &PlayerIdData, missile_id: MissileIdData) -> &MissileState {
         &self.get_player(player_id).missiles[missile_id]
     }
@@ -113,6 +114,7 @@ impl GameState {
     }
 
     /// Add a new Star
+    #[cfg(test)]
     fn add_star(&mut self, star: StarData) {
         self.stars.push(star);
     }
